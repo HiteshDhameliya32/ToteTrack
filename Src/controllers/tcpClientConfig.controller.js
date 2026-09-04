@@ -264,6 +264,11 @@ async function createZone(req, res) {
 // ── DELETE /api/tcp-zones/:id ─────────────────────────────────────────────────
 async function deleteZone(req, res) {
   try {
+    // Only Super Admin may delete a zone / cycle
+    if (!req.user || req.user.role !== "Super Admin") {
+      return res.status(403).json({ error: "Only Super Admin can perform this action." });
+    }
+
     await ensureTable();
     const userId = req.user.id;
     const zoneId = Number(req.params.id);

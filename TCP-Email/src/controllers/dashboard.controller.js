@@ -1,5 +1,5 @@
 const { getEmailLogs, getEmailSuccessCount } = require("../models/email.model");
-const { getStats, getPendingPaginated, getRecords, getRecentRecords } = require("../models/message.model");
+const { getStats, getPendingPaginated, getRecords, getRecentRecords, deleteCyclesByIds, deleteCyclesByFilter } = require("../models/message.model");
 const { sendEmailReport } = require("../services/email.service");
 
 const logs = async (req, res, next) => {
@@ -108,4 +108,31 @@ const getZoneFolderPath = async (req, res, next) => {
   }
 };
 
-module.exports = { logs, sendNow, dashboardStats, pending, records, recentRecords, getZoneFolderPath };
+// Delete selected cycle records by IDs (Super Admin only)
+const deleteSelectedRecords = async (req, res, next) => {
+  try {
+    const ids = req.body.ids;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: "ids[] array is required" });
+    }
+    const deleted = await deleteCyclesByIds(ids);
+    res.json({ success: true, deleted });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Delete all cycles matching current filters (Super Admin only)
+const deleteFilteredRecords = async (req, res, next) => {
+  try {
+    const emailStatus = req.body.emailStatus || "all";
+    const timeRange   = req.body.timeRange   || "all";
+    const search      = req.body.search      || "";
+    const deleted = await deleteCyclesByFilter({ emailStatus, timeRange, search });
+    res.json({ success: true, deleted });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { logs, sendNow, dashboardStats, pending, records, recentRecords, getZoneFolderPath, deleteSelectedRecords, deleteFilteredRecords };

@@ -308,6 +308,42 @@ async function getReportData({ fromDt, toDt, status = "all" }) {
   }));
 }
 
+// ── Delete Cycles by IDs ───────────────────────────────────────────────────
+async function deleteCyclesByIds(ids) {
+  if (!ids || !ids.length) return 0;
+  const placeholders = ids.map(() => "?").join(",");
+  const [result] = await db.execute(
+    `DELETE FROM zone_cycles WHERE id IN (${placeholders})`,
+    ids
+  );
+  return result.affectedRows ?? 0;
+}
+
+// ── Delete Cycles by Filter (all matching) ─────────────────────────────────
+async function deleteCyclesByFilter({ emailStatus = "all", timeRange = "all", search = "" }) {
+  const where  = [];
+  const params = [];
+
+  if (emailStatus === "sent")    where.push("status = 'PASS'");
+  if (emailStatus === "pending") where.push("status = 'NR'");
+
+  if (TIME_RANGE_SQL[timeRange]) {
+    where.push(TIME_RANGE_SQL[timeRange].replace(/received_at/g, "started_at"));
+  }
+
+  if (search) {
+    where.push("(cycle_id LIKE ? OR barcode LIKE ? OR CAST(zone_id AS TEXT) LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+  }
+
+  const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const [result] = await db.execute(
+    `DELETE FROM zone_cycles ${whereClause}`,
+    params
+  );
+  return result.affectedRows ?? 0;
+}
+
 module.exports = {
   getUnsentRecords,
   markAsSent,
@@ -320,4 +356,6 @@ module.exports = {
   getReportData,
   getUnsentCycles,
   markCyclesSent,
+  deleteCyclesByIds,
+  deleteCyclesByFilter,
 };

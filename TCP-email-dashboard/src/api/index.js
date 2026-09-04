@@ -83,6 +83,8 @@ export const getRecords = (params) => api.get("/records", { params }).then(r => 
 export const getRecentRecords = () => api.get("/records/recent").then(r => r.data.data);
 export const sendSelectedRecords = (ids) => api.post("/records/send-selected", { ids });
 export const sendFilteredRecords = (filters) => api.post("/records/send-filtered", filters);
+export const deleteSelectedRecords = (ids) => api.delete("/records/delete-selected", { data: { ids } }).then(r => r.data);
+export const deleteFilteredRecords = (filters) => api.delete("/records/delete-filtered", { data: filters }).then(r => r.data);
 
 // Active Schedules (for dashboard widget)
 export const getActiveSchedules = () =>

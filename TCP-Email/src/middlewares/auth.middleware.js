@@ -85,4 +85,18 @@ const authorize = (permission) => {
   };
 };
 
-module.exports = { authenticate, authorize };
+// Restricts an endpoint to Super Admin role only
+const superAdminOnly = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: "Authentication required" });
+  }
+  if (req.user.role !== "Super Admin") {
+    return res.status(403).json({
+      success: false,
+      message: "Only Super Admin can perform this action.",
+    });
+  }
+  next();
+};
+
+module.exports = { authenticate, authorize, superAdminOnly };

@@ -13,7 +13,7 @@ const charts    = require("../controllers/charts.controller");
 const notif     = require("../controllers/notification.controller");
 const report    = require("../controllers/report.controller");
 
-const { authenticate, authorize } = require("../middlewares/auth.middleware");
+const { authenticate, authorize, superAdminOnly } = require("../middlewares/auth.middleware");
 
 // ── Public Auth Routes ─────────────────────────────────
 router.post("/auth/login", auth.login);
@@ -74,6 +74,10 @@ router.get("/records/zone-folder", authorize("VIEW_RECORDS"), dashboard.getZoneF
 router.post("/records/send-selected", authorize("SEND_EMAIL"), records.sendSelected);
 router.post("/records/send-filtered", authorize("SEND_EMAIL"), records.sendFiltered);
 
+// ── Delete Cycle Records (Super Admin Only) ────────────
+router.delete("/records/delete-selected", superAdminOnly, dashboard.deleteSelectedRecords);
+router.delete("/records/delete-filtered", superAdminOnly, dashboard.deleteFilteredRecords);
+
 // ── SMTP Settings Routes ───────────────────────────────
 router.get("/settings/smtp", authorize("MANAGE_SETTINGS"), settings.get);
 router.put("/settings/smtp", authorize("MANAGE_SETTINGS"), settings.update);
@@ -94,7 +98,7 @@ router.post("/tcp-client-config/reconnect", tcpClientCtrl.reconnect);
 
 router.get("/tcp-zones",      tcpClientCtrl.getZones);
 router.post("/tcp-zones",     tcpClientCtrl.createZone);
-router.delete("/tcp-zones/:id", tcpClientCtrl.deleteZone);
+router.delete("/tcp-zones/:id", superAdminOnly, tcpClientCtrl.deleteZone);
 
 // ── Device connection status — proxies to TCP-Node (port 8001) ───────────
 router.get("/devices/status", authenticate, async (req, res, next) => {

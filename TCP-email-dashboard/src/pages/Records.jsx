@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getRecords, sendSelectedRecords, sendFilteredRecords } from "../api";
+import { getRecords, sendSelectedRecords, sendFilteredRecords, deleteSelectedRecords, deleteFilteredRecords } from "../api";
 import Card from "../components/ui/Card";
 import { Badge, Spinner, EmptyState, ErrorState } from "../components/ui/Misc";
 import Button from "../components/ui/Button";
 import { useToastStore } from "../store/toast.store";
-import { Search, Database, Send, Filter, X, AlertTriangle, Image as ImageIcon } from "lucide-react";
+import { useAuth } from "../store/AuthContext";
+import { Search, Database, Send, Filter, X, AlertTriangle, Image as ImageIcon, Trash2 } from "lucide-react";
 const EMAIL_STATUS_OPTIONS = [
   { value: "all",     label: "All Status" },
   { value: "sent",    label: "PASS" },
@@ -111,15 +112,15 @@ function ImageStatusButton({ image, folderPath }) {
 }
 
 
-function ConfirmModal({ open, title, message, onConfirm, onCancel, loading }) {
+function ConfirmModal({ open, title, message, onConfirm, onCancel, loading, danger }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onCancel} />
       <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
         <div className="flex items-start gap-4 mb-6">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-50 border border-amber-100">
-            <AlertTriangle size={20} className="text-amber-600" />
+          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ${danger ? "bg-red-50 border-red-100" : "bg-amber-50 border-amber-100"}`}>
+            <AlertTriangle size={20} className={danger ? "text-red-600" : "text-amber-600"} />
           </div>
           <div>
             <h3 className="text-base font-semibold text-slate-800">{title}</h3>
@@ -128,9 +129,15 @@ function ConfirmModal({ open, title, message, onConfirm, onCancel, loading }) {
         </div>
         <div className="flex justify-end gap-3">
           <Button variant="ghost" onClick={onCancel} disabled={loading}>Cancel</Button>
-          <Button variant="success" onClick={onConfirm} disabled={loading}>
-            {loading ? "Sending…" : "Yes, Send Email"}
-          </Button>
+          {danger ? (
+            <Button variant="danger" onClick={onConfirm} disabled={loading}>
+              {loading ? "Deleting…" : "Yes, Delete"}
+            </Button>
+          ) : (
+            <Button variant="success" onClick={onConfirm} disabled={loading}>
+              {loading ? "Sending…" : "Yes, Send Email"}
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -140,6 +147,8 @@ function ConfirmModal({ open, title, message, onConfirm, onCancel, loading }) {
 export default function Records() {
   const qc    = useQueryClient();
   const toast = useToastStore((s) => s.addToast);
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "Super Admin";
 
   const [page,        setPage]        = useState(1);
   const [searchInput, setSearchInput] = useState("");
@@ -210,9 +219,32 @@ export default function Records() {
     onError: (e) => { setModal(null); toast(e.response?.data?.message || "Send failed", "error"); },
   });
 
+  const deleteSelected = useMutation({
+    mutationFn: () => deleteSelectedRecords([...selected]),
+    onSuccess: (res) => {
+      setModal(null); clearSelection();
+      qc.invalidateQueries(["records"]); qc.invalidateQueries(["stats"]);
+      toast(`🗑️ Deleted ${res.deleted} cycle${res.deleted !== 1 ? "s" : ""}`);
+    },
+    onError: (e) => { setModal(null); toast(e.response?.data?.message || "Delete failed", "error"); },
+  });
+
+  const deleteFiltered = useMutation({
+    mutationFn: () => deleteFilteredRecords({ emailStatus, timeRange, search }),
+    onSuccess: (res) => {
+      setModal(null); clearSelection();
+      qc.invalidateQueries(["records"]); qc.invalidateQueries(["stats"]);
+      toast(`🗑️ Deleted ${res.deleted} cycle${res.deleted !== 1 ? "s" : ""}`);
+    },
+    onError: (e) => { setModal(null); toast(e.response?.data?.message || "Delete failed", "error"); },
+  });
+
   const isSending    = sendSelected.isPending || sendFiltered.isPending;
-  const openModal    = (type) => setModal({ type, count: type === "selected" ? selected.size : data?.total ?? 0 });
+  const isDeleting   = deleteSelected.isPending || deleteFiltered.isPending;
+  const isBusy       = isSending || isDeleting;
+  const openModal    = (type) => setModal({ type, count: type === "selected" || type === "delete-selected" ? selected.size : data?.total ?? 0 });
   const confirmSend  = () => modal?.type === "selected" ? sendSelected.mutate() : sendFiltered.mutate();
+  const confirmDelete = () => modal?.type === "delete-selected" ? deleteSelected.mutate() : deleteFiltered.mutate();
   const resetFilters = () => { setSearchInput(""); setSearch(""); setEmailStatus("all"); setTimeRange("all"); };
 
   return (
@@ -233,14 +265,26 @@ export default function Records() {
               Selected: <span className="font-bold">{selected.size.toLocaleString()}</span> records
             </span>
           )}
-          <Button size="sm" variant="primary" disabled={selected.size === 0 || isSending} onClick={() => openModal("selected")}>
+          <Button size="sm" variant="primary" disabled={selected.size === 0 || isBusy} onClick={() => openModal("selected")}>
             <Send size={14} />
             Send Selected{selected.size > 0 ? ` (${selected.size})` : ""}
           </Button>
-          <Button size="sm" variant="success" disabled={!data?.total || isSending} onClick={() => openModal("filtered")}>
+          <Button size="sm" variant="success" disabled={!data?.total || isBusy} onClick={() => openModal("filtered")}>
             <Filter size={14} />
             Send Filtered{data?.total ? ` (${Number(data.total).toLocaleString()})` : ""}
           </Button>
+          {isSuperAdmin && (
+            <>
+              <Button size="sm" variant="danger" disabled={selected.size === 0 || isBusy} onClick={() => openModal("delete-selected")}>
+                <Trash2 size={14} />
+                Delete Selected{selected.size > 0 ? ` (${selected.size})` : ""}
+              </Button>
+              <Button size="sm" variant="danger" disabled={!data?.total || isBusy} onClick={() => openModal("delete-filtered")}>
+                <Trash2 size={14} />
+                Delete Filtered{data?.total ? ` (${Number(data.total).toLocaleString()})` : ""}
+              </Button>
+            </>
+          )}
           {selected.size > 0 && (
             <Button size="sm" variant="ghost" onClick={clearSelection}><X size={13} /> Clear</Button>
           )}
@@ -388,14 +432,28 @@ export default function Records() {
 
       <ConfirmModal
         open={!!modal}
-        loading={isSending}
-        title={modal?.type === "selected" ? "Send Selected Records" : "Send Filtered Results"}
+        loading={isSending || isDeleting}
+        danger={modal?.type === "delete-selected" || modal?.type === "delete-filtered"}
+        title={
+          modal?.type === "selected"        ? "Send Selected Records"  :
+          modal?.type === "filtered"        ? "Send Filtered Results"  :
+          modal?.type === "delete-selected" ? "Delete Selected Cycles" :
+                                              "Delete Filtered Cycles"
+        }
         message={
           modal?.type === "selected"
             ? `Are you sure you want to send ${modal?.count?.toLocaleString()} selected records via email? An Excel attachment will be included.`
-            : `Are you sure you want to send all ${modal?.count?.toLocaleString()} filtered records via email? An Excel attachment will be included.`
+            : modal?.type === "filtered"
+            ? `Are you sure you want to send all ${modal?.count?.toLocaleString()} filtered records via email? An Excel attachment will be included.`
+            : modal?.type === "delete-selected"
+            ? `Permanently delete ${modal?.count?.toLocaleString()} selected cycle${modal?.count !== 1 ? "s" : ""}? This cannot be undone.`
+            : `Permanently delete all ${modal?.count?.toLocaleString()} filtered cycle${modal?.count !== 1 ? "s" : ""}? This cannot be undone.`
         }
-        onConfirm={confirmSend}
+        onConfirm={
+          modal?.type === "delete-selected" || modal?.type === "delete-filtered"
+            ? confirmDelete
+            : confirmSend
+        }
         onCancel={() => setModal(null)}
       />
     </div>

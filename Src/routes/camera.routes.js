@@ -18,6 +18,16 @@ function authenticate(req, res, next) {
   }
 }
 
+function superAdminOnly(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: "Authentication required" });
+  }
+  if (req.user.role !== "Super Admin") {
+    return res.status(403).json({ error: "Only Super Admin can perform this action." });
+  }
+  next();
+}
+
 // Camera / TCP server listener routes
 router.get("/cameras", ctrl.getAll);
 router.post("/cameras", ctrl.create);
@@ -34,6 +44,6 @@ router.post("/tcp-client-config/reconnect", authenticate, tcpClientCtrl.reconnec
 // Zone routes
 router.get("/tcp-zones",      authenticate, tcpClientCtrl.getZones);
 router.post("/tcp-zones",     authenticate, tcpClientCtrl.createZone);
-router.delete("/tcp-zones/:id", authenticate, tcpClientCtrl.deleteZone);
+router.delete("/tcp-zones/:id", authenticate, superAdminOnly, tcpClientCtrl.deleteZone);
 
 module.exports = router;
