@@ -1,0 +1,26 @@
+{
+  "name": "tcp-node-cleanup",
+  "version": "1.0.0",
+  "description": "Cleanup service for tcp-node - handles database and log retention",
+  "main": "Src/app.js",
+  "scripts": {
+    "start": "node Src/app.js",
+    "dev": "node Src/app.js"
+  },
+  "keywords": [
+    "cleanup",
+    "jobs",
+    "cron"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "sql.js": "^1.14.2",
+    "dotenv": "^17.4.2",
+    "node-cron": "^4.2.1",
+    "sql.js": "^1.14.2",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0"
+  }
+}

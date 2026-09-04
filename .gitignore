@@ -1,0 +1,83 @@
+# Dependencies
+node_modules/
+IDMVS_Win_EN_STD_4.2.4_260105/
+IDMVS_Win_EN_STD_4.2.4_260105/
+# Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime files
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage
+coverage/
+
+# Build folders
+dist/
+build/
+out/
+
+# Cache
+.cache/
+.parcel-cache/
+.eslintcache
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# TCP Project Data (optional)
+uploads/
+downloads/
+backups/
+storage/
+
+# React/Vite Dashboard Build
+TCP-email-dashboard/dist/
+TCP-email-dashboard/node_modules/
+
+# Email Service
+TCP-Email/node_modules/
+
+# Cleanup Service
+TCP-node-cleanup/node_modules/
+
+# Certificates / Keys
+*.pem
+*.key
+*.crt
+*.pfx
+
+# Database
+# *.db files are NOT ignored so tcp_logs.db is tracked in git.
+# NOTE: Only push this on private/internal repositories.
+# tcp_logs.db contains seeded schema — live data should be kept out of git.
+
+# Package lock (optional)
+# package-lock.json
