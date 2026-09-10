@@ -6,6 +6,8 @@ const {
   getBusyHours,
   getEnhancedStats,
   getZoneBreakdown,
+  getZonePassRate,
+  getZoneDailyTrend,
 } = require("../models/charts.model");
 
 const messagesTrend = async (req, res, next) => {
@@ -58,6 +60,20 @@ const zoneBreakdown = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const zonePassRate = async (req, res, next) => {
+  try {
+    const data = await getZonePassRate();
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+};
+
+const zoneDailyTrend = async (req, res, next) => {
+  try {
+    const data = await getZoneDailyTrend();
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   messagesTrend,
   emailStatus,
@@ -66,4 +82,6 @@ module.exports = {
   busyHours,
   enhancedStats,
   zoneBreakdown,
+  zonePassRate,
+  zoneDailyTrend,
 };

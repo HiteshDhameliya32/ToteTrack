@@ -127,8 +127,8 @@ module.exports = { sendEmailReport, sendReportEmail };
  * @param {string} opts.toLabel   - display string for email header
  * @param {number} opts.companyId
  */
-async function sendReportEmail({ fromDt, toDt, status = "all", fromLabel, toLabel, companyId = 1 }) {
-  logger.info(`[report-email] Triggered: from=${fromDt} to=${toDt} status=${status} company=${companyId}`);
+async function sendReportEmail({ fromDt, toDt, status = "all", zoneId = null, fromLabel, toLabel, companyId = 1 }) {
+  logger.info(`[report-email] Triggered: from=${fromDt} to=${toDt} status=${status} zoneId=${zoneId || "all"} company=${companyId}`);
 
   // ── Recipients ───────────────────────────────────────────────────────────
   const recipients = await getActiveRecipients(companyId);
@@ -145,7 +145,7 @@ async function sendReportEmail({ fromDt, toDt, status = "all", fromLabel, toLabe
   }
 
   // ── Data ─────────────────────────────────────────────────────────────────
-  const rows = await getReportData({ fromDt, toDt, status });
+  const rows = await getReportData({ fromDt, toDt, status, zoneId });
   if (!rows.length) {
     return { skipped: true, reason: "No records found for the selected date range" };
   }

@@ -113,6 +113,22 @@ function isValidBarcode(barcode) {
 }
 
 /**
+ * Look up the human-readable name for a zone from tcp_zones table.
+ * Returns the name string, or null if not found.
+ */
+async function getZoneName(zoneId) {
+  try {
+    const [rows] = await db.execute(
+      "SELECT name FROM tcp_zones WHERE id = ? LIMIT 1",
+      [zoneId]
+    );
+    return rows?.[0]?.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Query all devices (host:port pairs) assigned to a specific zone
  * Returns array of device keys like ["192.168.1.10:5001", "192.168.1.10:5002"]
  */
@@ -194,16 +210,20 @@ async function saveCycleResult(cycle, completionReason) {
   const startTime = new Date(cycle.startedAt).getTime();
   const endTime = new Date(completedAt).getTime();
   const durationMs = endTime - startTime;
+
+  // Resolve zone name at write time so it survives zone renames/deletes
+  const zoneName = await getZoneName(cycle.zoneId);
   
   try {
     await db.execute(
       `INSERT INTO zone_cycles 
-        (cycle_id, zone_id, started_at, completed_at, status, barcode, image_name, first_record_id, 
+        (cycle_id, zone_id, zone_name, started_at, completed_at, status, barcode, image_name, first_record_id, 
          completion_reason, expected_devices, received_devices)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         cycle.cycleId,
         cycle.zoneId,
+        zoneName,
         cycle.startedAt,
         completedAt,
         status,
@@ -326,14 +346,16 @@ async function createCycle(zoneId, recordId, deviceId, barcode, message) {
       const completedAt = getKolkataTimeStr();
       const status = isValidBarcode(barcode) ? "PASS" : "NR";
       const imageName = extractImageName(message);
+      const zoneName = await getZoneName(zoneId);
       await db.execute(
         `INSERT INTO zone_cycles 
-          (cycle_id, zone_id, started_at, completed_at, status, barcode, image_name, first_record_id, 
+          (cycle_id, zone_id, zone_name, started_at, completed_at, status, barcode, image_name, first_record_id, 
            completion_reason, expected_devices, received_devices)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           cycleId,
           zoneId,
+          zoneName,
           startedAt,
           completedAt,
           status,

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { getReportPreview, downloadReport, sendReportEmail } from "../api";
+import { getReportPreview, downloadReport, sendReportEmail, getZonesList } from "../api";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import { Badge, Spinner, EmptyState, ErrorState } from "../components/ui/Misc";
@@ -63,19 +63,23 @@ function StatCard({ icon: Icon, label, value, color }) {
 /* ─── Main page ───────────────────────────────────────── */
 export default function Reports() {
   // Default: today 00:00 → now
-  const [from,       setFrom]       = useState(() => localNow(-24 * 60)); // 24h ago
+  const [from,       setFrom]       = useState(() => localNow(-24 * 60));
   const [to,         setTo]         = useState(() => localNow());
   const [status,     setStatus]     = useState("all");
-  const [committed,  setCommitted]  = useState({ from: localNow(-24 * 60), to: localNow(), status: "all" });
+  const [zoneId,     setZoneId]     = useState("");
+  const [committed,  setCommitted]  = useState({ from: localNow(-24 * 60), to: localNow(), status: "all", zoneId: "" });
   const [downloading, setDownloading] = useState(false);
   const [dlError,    setDlError]    = useState(null);
+
+  // Load available zones for the dropdown
+  const { data: zonesData } = useQuery({ queryKey: ["zones-list"], queryFn: getZonesList });
 
   // Email mutation — fire-and-forget: backend returns 202 instantly
   const [emailQueued, setEmailQueued] = useState(false); // shows the "we're sending" banner
   const [emailError,  setEmailError]  = useState(null);
 
   const emailMutation = useMutation({
-    mutationFn: () => sendReportEmail({ from: committed.from, to: committed.to, status: committed.status }),
+    mutationFn: () => sendReportEmail({ from: committed.from, to: committed.to, status: committed.status, zoneId: committed.zoneId || undefined }),
     onSuccess: () => {
       // 202 accepted — backend is processing in background
       setEmailQueued(true);
@@ -89,8 +93,8 @@ export default function Reports() {
 
   // Preview query — only fires when user clicks "Apply"
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
-    queryKey: ["reports-preview", committed.from, committed.to, committed.status],
-    queryFn:  () => getReportPreview({ from: committed.from, to: committed.to, status: committed.status }),
+    queryKey: ["reports-preview", committed.from, committed.to, committed.status, committed.zoneId],
+    queryFn:  () => getReportPreview({ from: committed.from, to: committed.to, status: committed.status, zoneId: committed.zoneId || undefined }),
     enabled:  !!(committed.from && committed.to),
   });
 
@@ -101,7 +105,7 @@ export default function Reports() {
 
   const applyFilter = () => {
     if (!from || !to) return;
-    setCommitted({ from, to, status });
+    setCommitted({ from, to, status, zoneId });
   };
 
   const handleDownload = async () => {
@@ -110,9 +114,10 @@ export default function Reports() {
     setDlError(null);
     try {
       const res = await downloadReport({
-        from: committed.from,
-        to:   committed.to,
+        from:   committed.from,
+        to:     committed.to,
         status: committed.status,
+        ...(committed.zoneId ? { zoneId: committed.zoneId } : {}),
       });
 
       // Build a download link from the blob
@@ -190,6 +195,23 @@ export default function Reports() {
             >
               {STATUS_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Zone */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+              <Filter size={12} /> Zone
+            </label>
+            <select
+              value={zoneId}
+              onChange={(e) => setZoneId(e.target.value)}
+              className={inputClass + " cursor-pointer"}
+            >
+              <option value="">All Zones</option>
+              {(zonesData ?? []).map((z) => (
+                <option key={z.id} value={z.id}>{z.name}</option>
               ))}
             </select>
           </div>

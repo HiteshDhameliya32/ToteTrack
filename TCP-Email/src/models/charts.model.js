@@ -177,7 +177,7 @@ async function getZoneBreakdown() {
   const [rows] = await db.execute(`
     SELECT
       zc.zone_id,
-      COALESCE(tz.name, 'Zone ' || zc.zone_id) AS zone_name,
+      COALESCE(zc.zone_name, tz.name, 'Zone ' || zc.zone_id) AS zone_name,
       COUNT(*)                                   AS total,
       SUM(CASE WHEN zc.status = 'PASS' THEN 1 ELSE 0 END) AS pass,
       SUM(CASE WHEN zc.status = 'NR'   THEN 1 ELSE 0 END) AS nr
@@ -197,6 +197,80 @@ async function getZoneBreakdown() {
   }));
 }
 
+/* ─── Zone pass rate — % per zone (all time) ─────────── */
+async function getZonePassRate() {
+  const [rows] = await db.execute(`
+    SELECT
+      zc.zone_id,
+      COALESCE(zc.zone_name, tz.name, 'Zone ' || zc.zone_id) AS zone_name,
+      COUNT(*)                                                  AS total,
+      SUM(CASE WHEN zc.status = 'PASS' THEN 1 ELSE 0 END)     AS pass,
+      SUM(CASE WHEN zc.status = 'NR'   THEN 1 ELSE 0 END)     AS nr,
+      ROUND(
+        100.0 * SUM(CASE WHEN zc.status = 'PASS' THEN 1 ELSE 0 END) / COUNT(*),
+        1
+      ) AS pass_rate
+    FROM zone_cycles zc
+    LEFT JOIN tcp_zones tz ON tz.id = zc.zone_id
+    WHERE zc.status IS NOT NULL
+    GROUP BY zc.zone_id
+    ORDER BY pass_rate DESC
+  `);
+
+  return rows.map(r => ({
+    zone_id:   r.zone_id,
+    zone_name: r.zone_name,
+    total:     Number(r.total),
+    pass:      Number(r.pass),
+    nr:        Number(r.nr),
+    pass_rate: Number(r.pass_rate ?? 0),
+  }));
+}
+
+/* ─── Zone daily trend — PASS/NR per zone last 7 days ── */
+async function getZoneDailyTrend() {
+  const [rows] = await db.execute(`
+    SELECT
+      zc.zone_id,
+      COALESCE(zc.zone_name, tz.name, 'Zone ' || zc.zone_id) AS zone_name,
+      date(zc.started_at) AS day,
+      strftime('%d', zc.started_at) || ' ' ||
+        CASE strftime('%m', zc.started_at)
+          WHEN '01' THEN 'Jan' WHEN '02' THEN 'Feb' WHEN '03' THEN 'Mar'
+          WHEN '04' THEN 'Apr' WHEN '05' THEN 'May' WHEN '06' THEN 'Jun'
+          WHEN '07' THEN 'Jul' WHEN '08' THEN 'Aug' WHEN '09' THEN 'Sep'
+          WHEN '10' THEN 'Oct' WHEN '11' THEN 'Nov' WHEN '12' THEN 'Dec'
+        END AS label,
+      SUM(CASE WHEN zc.status = 'PASS' THEN 1 ELSE 0 END) AS pass,
+      SUM(CASE WHEN zc.status = 'NR'   THEN 1 ELSE 0 END) AS nr,
+      COUNT(*) AS total
+    FROM zone_cycles zc
+    LEFT JOIN tcp_zones tz ON tz.id = zc.zone_id
+    WHERE zc.status IS NOT NULL
+      AND zc.started_at >= date('now', '+5 hours', '+30 minutes', '-7 days')
+    GROUP BY zc.zone_id, date(zc.started_at)
+    ORDER BY day ASC, zc.zone_id ASC
+  `);
+
+  // Pivot: { day, label, Zone1_pass, Zone1_nr, Zone2_pass, ... }
+  const dayMap = new Map();
+  const zoneNames = new Set();
+
+  for (const r of rows) {
+    const name = r.zone_name;
+    zoneNames.add(name);
+    if (!dayMap.has(r.day)) dayMap.set(r.day, { day: r.day, label: r.label });
+    const entry = dayMap.get(r.day);
+    entry[`${name}_pass`] = Number(r.pass);
+    entry[`${name}_nr`]   = Number(r.nr);
+  }
+
+  return {
+    days:       [...dayMap.values()],
+    zoneNames:  [...zoneNames],
+  };
+}
+
 module.exports = {
   getEnhancedStats,
   getMessagesTrend,
@@ -205,4 +279,6 @@ module.exports = {
   getEmailHistory,
   getBusyHours,
   getZoneBreakdown,
+  getZonePassRate,
+  getZoneDailyTrend,
 };

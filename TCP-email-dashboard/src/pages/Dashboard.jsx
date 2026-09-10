@@ -1,22 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-  getEnhancedStats, getActiveSchedules,
+  getEnhancedStats,
   getChartMsgTrend, getChartEmailStatus, getChartDailyRecs,
   getChartEmailHist, getChartBusyHours, getChartZoneBreakdown,
+  getChartZonePassRate, getChartZoneDailyTrend,
 } from "../api";
 import Card from "../components/ui/Card";
-import { Badge, Spinner, ErrorState, EmptyState } from "../components/ui/Misc";
+import { ErrorState } from "../components/ui/Misc";
 import MessagesTrendChart  from "../components/charts/MessagesTrendChart";
 import CycleStatusChart    from "../components/charts/CycleStatusChart";
 import DailyRecordsChart   from "../components/charts/DailyRecordsChart";
 import EmailHistoryChart   from "../components/charts/EmailHistoryChart";
 import BusyHoursChart      from "../components/charts/BusyHoursChart";
 import ZoneBreakdownChart  from "../components/charts/ZoneBreakdownChart";
+import ZonePassRateChart   from "../components/charts/ZonePassRateChart";
+import ZoneDailyTrendChart from "../components/charts/ZoneDailyTrendChart";
 import DeviceStatusWidget  from "../components/DeviceStatusWidget";
-import {
-  Package, CheckCircle2, XCircle, Calendar,
-  TrendingUp, Clock,
-} from "lucide-react";
+import { Package, CheckCircle2, XCircle, Calendar, TrendingUp, Clock } from "lucide-react";
 
 const REFETCH = 30_000;
 
@@ -39,48 +39,49 @@ function StatCard({ label, value, sub, icon: Icon, bg, ic, vc, border }) {
 }
 
 export default function Dashboard() {
-  const stats     = useQuery({ queryKey: ["enhanced-stats"],      queryFn: getEnhancedStats,       refetchInterval: REFETCH });
-  const schedules = useQuery({ queryKey: ["active-schedules"],    queryFn: getActiveSchedules,     refetchInterval: REFETCH });
-  const msgTrend  = useQuery({ queryKey: ["chart-msg-trend"],     queryFn: getChartMsgTrend,       refetchInterval: REFETCH });
-  const cycleStat = useQuery({ queryKey: ["chart-cycle-stat"],    queryFn: getChartEmailStatus,    refetchInterval: REFETCH });
-  const dailyRecs = useQuery({ queryKey: ["chart-daily-recs"],    queryFn: getChartDailyRecs,      refetchInterval: REFETCH });
-  const emailHist = useQuery({ queryKey: ["chart-email-hist"],    queryFn: getChartEmailHist,      refetchInterval: REFETCH });
-  const busy      = useQuery({ queryKey: ["chart-busy-hours"],    queryFn: getChartBusyHours,      refetchInterval: REFETCH });
-  const zones     = useQuery({ queryKey: ["chart-zone-breakdown"],queryFn: getChartZoneBreakdown,  refetchInterval: REFETCH });
+  const stats        = useQuery({ queryKey: ["enhanced-stats"],        queryFn: getEnhancedStats,        refetchInterval: REFETCH });
+  const msgTrend     = useQuery({ queryKey: ["chart-msg-trend"],       queryFn: getChartMsgTrend,        refetchInterval: REFETCH });
+  const cycleStat    = useQuery({ queryKey: ["chart-cycle-stat"],      queryFn: getChartEmailStatus,     refetchInterval: REFETCH });
+  const dailyRecs    = useQuery({ queryKey: ["chart-daily-recs"],      queryFn: getChartDailyRecs,       refetchInterval: REFETCH });
+  const emailHist    = useQuery({ queryKey: ["chart-email-hist"],      queryFn: getChartEmailHist,       refetchInterval: REFETCH });
+  const busy         = useQuery({ queryKey: ["chart-busy-hours"],      queryFn: getChartBusyHours,       refetchInterval: REFETCH });
+  const zones        = useQuery({ queryKey: ["chart-zone-breakdown"],  queryFn: getChartZoneBreakdown,   refetchInterval: REFETCH });
+  const zonePassRate = useQuery({ queryKey: ["chart-zone-pass-rate"],  queryFn: getChartZonePassRate,    refetchInterval: REFETCH });
+  const zoneTrend    = useQuery({ queryKey: ["chart-zone-daily-trend"],queryFn: getChartZoneDailyTrend, refetchInterval: REFETCH });
 
-  const s = stats.data;
+  const s        = stats.data;
   const passRate = s?.passRate ?? 0;
 
   const STAT_CARDS = [
     {
-      key: "total",     label: "Total Totes",     value: s?.total,
+      key: "total",    label: "Total Totes",  value: s?.total,
       sub: `Today: ${s?.today ?? 0}`,
-      icon: Package,       bg: "bg-blue-50",    ic: "text-blue-600",    vc: "text-blue-700",   border: "border-blue-100",
+      icon: Package,      bg: "bg-blue-50",    ic: "text-blue-600",    vc: "text-blue-700",    border: "border-blue-100",
     },
     {
-      key: "pass",      label: "Totes Passed",    value: s?.pass,
+      key: "pass",     label: "Totes Passed", value: s?.pass,
       sub: `Today: ${s?.passToday ?? 0}`,
-      icon: CheckCircle2,  bg: "bg-emerald-50", ic: "text-emerald-600", vc: "text-emerald-700", border: "border-emerald-100",
+      icon: CheckCircle2, bg: "bg-emerald-50", ic: "text-emerald-600", vc: "text-emerald-700", border: "border-emerald-100",
     },
     {
-      key: "nr",        label: "No Read (NR)",    value: s?.nr,
+      key: "nr",       label: "No Read (NR)", value: s?.nr,
       sub: `Today: ${s?.nrToday ?? 0}`,
-      icon: XCircle,       bg: "bg-red-50",     ic: "text-red-500",     vc: "text-red-600",    border: "border-red-100",
+      icon: XCircle,      bg: "bg-red-50",     ic: "text-red-500",     vc: "text-red-600",     border: "border-red-100",
     },
     {
-      key: "passRate",  label: "Pass Rate",       value: `${passRate}%`,
+      key: "passRate", label: "Pass Rate",    value: `${passRate}%`,
       sub: "All time",
-      icon: TrendingUp,    bg: "bg-violet-50",  ic: "text-violet-600",  vc: "text-violet-700", border: "border-violet-100",
+      icon: TrendingUp,   bg: "bg-violet-50",  ic: "text-violet-600",  vc: "text-violet-700",  border: "border-violet-100",
     },
     {
-      key: "today",     label: "Scans Today",     value: s?.today,
+      key: "today",    label: "Scans Today",  value: s?.today,
       sub: null,
-      icon: Calendar,      bg: "bg-amber-50",   ic: "text-amber-600",   vc: "text-amber-700",  border: "border-amber-100",
+      icon: Calendar,     bg: "bg-amber-50",   ic: "text-amber-600",   vc: "text-amber-700",   border: "border-amber-100",
     },
     {
       key: "activeSchedules", label: "Active Schedules", value: s?.activeSchedules,
       sub: "Email jobs",
-      icon: Clock,         bg: "bg-cyan-50",    ic: "text-cyan-600",    vc: "text-cyan-700",   border: "border-cyan-100",
+      icon: Clock,        bg: "bg-cyan-50",    ic: "text-cyan-600",    vc: "text-cyan-700",    border: "border-cyan-100",
     },
   ];
 
@@ -136,7 +137,21 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* ── Row 3: Peak Hours + Email History + Device Status ─ */}
+      {/* ── Row 3: Zone Pass Rate + Zone Daily Trend ───────── */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <ZonePassRateChart
+          data={zonePassRate.data}
+          isLoading={zonePassRate.isLoading}
+          isError={zonePassRate.isError}
+        />
+        <ZoneDailyTrendChart
+          data={zoneTrend.data}
+          isLoading={zoneTrend.isLoading}
+          isError={zoneTrend.isError}
+        />
+      </div>
+
+      {/* ── Row 4: Peak Hours + Email History + Device Status ─ */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <BusyHoursChart
           data={busy.data}
@@ -151,32 +166,6 @@ export default function Dashboard() {
         <DeviceStatusWidget />
       </div>
 
-      {/* ── Row 4: Active Schedules ─────────────────────────── */}
-      <Card>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-slate-700">Email Schedules</h2>
-          <Badge color="blue">Active</Badge>
-        </div>
-        {schedules.isLoading ? (
-          <Spinner />
-        ) : schedules.isError ? (
-          <ErrorState />
-        ) : !schedules.data?.length ? (
-          <EmptyState message="No active schedules" />
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-            {schedules.data.map((s) => (
-              <div key={s.id} className="flex items-center justify-between rounded-lg bg-slate-50 border border-slate-100 px-3 py-2.5 hover:bg-blue-50 hover:border-blue-100 transition-colors">
-                <div className="flex items-center gap-2">
-                  <Clock size={13} className="text-blue-500" />
-                  <span className="font-mono text-sm font-semibold text-slate-700">{s.time}</span>
-                </div>
-                <Badge color="green">On</Badge>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
     </div>
   );
 }

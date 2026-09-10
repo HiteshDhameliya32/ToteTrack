@@ -1,11 +1,11 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Clock, Mail, History, Inbox, Settings, Database, Bell, Users, Network, BarChart2 } from "lucide-react";
+import { LayoutDashboard, Clock, Mail, History, Inbox, Settings, Database, Bell, Users, Network, BarChart2, FolderOpen } from "lucide-react";
 import logo from "../assets/Aaradhna.png";
 import { useAuth } from "../store/AuthContext";
 
 const links = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", permission: "VIEW_DASHBOARD" },
-  { to: "/records", icon: Database,  label: "Cycle Results",        permission: "VIEW_RECORDS" },
+  { to: "/records", icon: Database,  label: "Live Data",        permission: "VIEW_RECORDS" },
   { to: "/reports", icon: BarChart2, label: "Reports",              permission: "VIEW_RECORDS" },
   { to: "/schedules", icon: Clock, label: "Schedules", permission: "MANAGE_SCHEDULES" },
   { to: "/recipients", icon: Mail, label: "Recipients", permission: "MANAGE_RECIPIENTS" },
@@ -14,7 +14,8 @@ const links = [
   { to: "/tcp-config", icon: Network, label: "TCP Config", permission: "MANAGE_TCP_CONFIG" },
   { to: "/notifications", icon: Bell, label: "Notifications", permission: "VIEW_NOTIFICATIONS" },
   { to: "/settings", icon: Settings, label: "Settings", permission: "MANAGE_SETTINGS" },
-  { to: "/users", icon: Users, label: "Users", permission: "CREATE_USERS" },
+  { to: "/users",         icon: Users,          label: "Users",                  permission: "CREATE_USERS" },
+  { to: "/file-manager",  icon: FolderOpen,     label: "File Manager",            superAdminOnly: true },
 ];
 
 export default function Sidebar() {

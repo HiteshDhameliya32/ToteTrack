@@ -60,6 +60,8 @@ router.get("/dashboard/charts/daily-records",     authorize("VIEW_DASHBOARD"), c
 router.get("/dashboard/charts/email-history",     authorize("VIEW_DASHBOARD"), charts.emailHistory);
 router.get("/dashboard/charts/busy-hours",        authorize("VIEW_DASHBOARD"), charts.busyHours);
 router.get("/dashboard/charts/zone-breakdown",    authorize("VIEW_DASHBOARD"), charts.zoneBreakdown);
+router.get("/dashboard/charts/zone-pass-rate",    authorize("VIEW_DASHBOARD"), charts.zonePassRate);
+router.get("/dashboard/charts/zone-daily-trend",  authorize("VIEW_DASHBOARD"), charts.zoneDailyTrend);
 
 // ── Reports Routes ─────────────────────────────────────
 router.get("/reports/preview",  authorize("VIEW_RECORDS"), report.preview);
@@ -78,10 +80,31 @@ router.post("/records/send-filtered", authorize("SEND_EMAIL"), records.sendFilte
 router.delete("/records/delete-selected", superAdminOnly, dashboard.deleteSelectedRecords);
 router.delete("/records/delete-filtered", superAdminOnly, dashboard.deleteFilteredRecords);
 
+// ── Zones list (read-only reference — all zones, for dropdowns) ────────────
+router.get("/zones-list", async (req, res, next) => {
+  try {
+    const db = require("../config/db");
+    const [rows] = await db.execute("SELECT id, name FROM tcp_zones ORDER BY name ASC");
+    res.json({ success: true, data: rows });
+  } catch (err) { next(err); }
+});
+
 // ── SMTP Settings Routes ───────────────────────────────
 router.get("/settings/smtp", authorize("MANAGE_SETTINGS"), settings.get);
 router.put("/settings/smtp", authorize("MANAGE_SETTINGS"), settings.update);
 router.post("/settings/test-email", authorize("MANAGE_SETTINGS"), settings.testEmail);
+
+// ── File Manager Routes (Super Admin only) ─────────────
+const fm = require("../controllers/fileManager.controller");
+router.get   ("/files",              superAdminOnly, fm.list);
+router.get   ("/files/read",         superAdminOnly, fm.read);
+router.get   ("/files/download",     superAdminOnly, fm.download);
+router.put   ("/files/save",         superAdminOnly, fm.save);
+router.post  ("/files/create-file",  superAdminOnly, fm.createFile);
+router.post  ("/files/create-folder",superAdminOnly, fm.createFolder);
+router.put   ("/files/rename",       superAdminOnly, fm.rename);
+router.delete("/files/delete",       superAdminOnly, fm.remove);
+router.post  ("/files/upload",       superAdminOnly, fm.uploadMiddleware, fm.upload);
 
 // ── Notifications Routes ───────────────────────────────
 router.get("/notifications",             authorize("VIEW_NOTIFICATIONS"), notif.list);

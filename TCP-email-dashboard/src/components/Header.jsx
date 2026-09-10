@@ -5,8 +5,8 @@ import { socket, getNotifications, getUnreadCount, markNotifRead, markAllNotifsR
 import { useAuth } from "../store/AuthContext";
 
 const PAGE_TITLES = {
-  "/":              { title: "Dashboard",          sub: "Real-time TCP message and email analytics" },
-  "/records":       { title: "Zone Cycle Results", sub: "Tote processing cycles with PASS/NR status" },
+  "/":              { title: "Dashboard",          sub: "Smart Tote Barcode Scanning & Analytics" },
+  "/records":       { title: "Live Data", sub: "Tote processing cycles with PASS/NR status" },
   "/schedules":     { title: "Email Schedules",    sub: "Configure automatic email send times" },
   "/recipients":    { title: "Email Recipients",   sub: "Manage who receives the email reports" },
   "/email-history": { title: "Email History",      sub: "Log of all sent email reports" },
@@ -14,6 +14,7 @@ const PAGE_TITLES = {
   "/settings":      { title: "Settings",           sub: "Configure SMTP settings for email delivery" },
   "/notifications": { title: "Notifications",      sub: "System alerts and service error logs" },
   "/users":         { title: "Users Management",   sub: "Configure access roles and permissions" },
+  "/file-manager":  { title: "File Manager",        sub: "Browse and manage the application directory" },
 };
 
 const SEVERITY_STYLES = {

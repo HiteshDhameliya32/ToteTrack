@@ -16,6 +16,7 @@ import Users from "./pages/Users";
 import Login from "./pages/Login";
 import Unauthorized from "./pages/Unauthorized";
 import TcpConfig from "./pages/TcpConfig";
+import FileManager from "./pages/FileManager";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider, useAuth } from "./store/AuthContext";
 import Footer from "./components/Footer";
@@ -73,6 +74,7 @@ function AppContent() {
               <Route path="/notifications" element={<ProtectedRoute permission="VIEW_NOTIFICATIONS"><Notifications /></ProtectedRoute>} />
               <Route path="/users"         element={<ProtectedRoute permission="CREATE_USERS"><Users /></ProtectedRoute>} />
               <Route path="/tcp-config"    element={<ProtectedRoute permission="MANAGE_TCP_CONFIG"><TcpConfig /></ProtectedRoute>} />
+              <Route path="/file-manager"  element={<ProtectedRoute superAdminOnly={true}><FileManager /></ProtectedRoute>} />
               <Route path="/403"           element={<Unauthorized />} />
               <Route path="*"              element={<Navigate to="/" replace />} />
             </Routes>

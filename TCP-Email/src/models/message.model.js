@@ -129,14 +129,17 @@ async function getRecords({ page = 1, limit = 20, emailStatus = "all", timeRange
 
   const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-  // Join with user_tcp_configs to get folder paths for each zone
+  // Join with user_tcp_configs for folder paths and tcp_zones for the zone name
   const [rows] = await db.query(
-    `SELECT zc.id, zc.cycle_id, zc.zone_id, zc.started_at as received_at, zc.completed_at, 
+    `SELECT zc.id, zc.cycle_id, zc.zone_id,
+            COALESCE(zc.zone_name, tz.name, 'Zone ' || zc.zone_id) AS zone_name,
+            zc.started_at as received_at, zc.completed_at, 
             zc.status as email_sent, zc.barcode, zc.image_name as image, zc.first_record_id, 
             zc.completion_reason, zc.expected_devices, zc.received_devices,
             uc.folder_path_ok, uc.folder_path_nr
      FROM zone_cycles zc
      LEFT JOIN user_tcp_configs uc ON uc.zone_id = zc.zone_id AND uc.is_active = 1
+     LEFT JOIN tcp_zones tz ON tz.id = zc.zone_id
      ${whereClause}
      GROUP BY zc.id
      ORDER BY zc.started_at DESC, zc.id DESC 
@@ -154,6 +157,7 @@ async function getRecords({ page = 1, limit = 20, emailStatus = "all", timeRange
     id: r.id,
     cycle_id: r.cycle_id,
     zone_id: r.zone_id,
+    zone_name: r.zone_name,
     received_at: r.received_at,
     completed_at: r.completed_at,
     message: `Cycle ${r.cycle_id.substring(0, 8)}... | ${r.completion_reason}`,
@@ -272,7 +276,7 @@ async function markCyclesSent(ids) {
 }
 
 // ── Report Data (date-range, all matching rows, with folder paths) ─────────
-async function getReportData({ fromDt, toDt, status = "all" }) {
+async function getReportData({ fromDt, toDt, status = "all", zoneId = null }) {
   const where  = [];
   const params = [];
 
@@ -283,11 +287,14 @@ async function getReportData({ fromDt, toDt, status = "all" }) {
   if (status === "PASS") where.push("zc.status = 'PASS'");
   if (status === "NR")   where.push("zc.status = 'NR'");
 
+  // Zone filter — only when a specific zone is selected
+  if (zoneId) { where.push("zc.zone_id = ?"); params.push(Number(zoneId)); }
+
   const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   const [rows] = await db.query(
     `SELECT zc.id, zc.cycle_id, zc.zone_id,
-            COALESCE(tz.name, 'Zone ' || zc.zone_id) AS zone_name,
+            COALESCE(zc.zone_name, tz.name, 'Zone ' || zc.zone_id) AS zone_name,
             zc.started_at, zc.completed_at,
             zc.status, zc.barcode, zc.image_name,
             zc.completion_reason, zc.expected_devices, zc.received_devices,

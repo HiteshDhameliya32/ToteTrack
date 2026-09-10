@@ -256,6 +256,7 @@ async function initSchema() {
   addColumnIfNotExists("zone_cycles", "image_name",  "TEXT NULL");
   addColumnIfNotExists("zone_cycles", "email_sent",  "INTEGER NOT NULL DEFAULT 0");
   addColumnIfNotExists("zone_cycles", "email_sent_at","TEXT NULL");
+  addColumnIfNotExists("zone_cycles", "zone_name",   "TEXT NULL");
 
   // ── Persist schema changes to disk ────────────────────────────────────────
   await db._persist();

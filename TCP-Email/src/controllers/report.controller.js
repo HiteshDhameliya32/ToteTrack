@@ -14,20 +14,18 @@ function pad(n) { return String(n).padStart(2, "0"); }
  */
 const download = async (req, res, next) => {
   try {
-    const { from, to, status = "all" } = req.query;
+    const { from, to, status = "all", zoneId = null } = req.query;
 
     if (!from || !to) {
       return res.status(400).json({ success: false, message: "from and to query params are required" });
     }
 
-    // Convert datetime-local strings to MySQL-compatible datetime
-    // Input: "2026-09-01T08:00"  →  "2026-09-01 08:00:00"
     const fromDt = from.replace("T", " ") + ":00";
-    const toDt   = to.replace("T", " ")   + ":59"; // include the last minute fully
+    const toDt   = to.replace("T", " ")   + ":59";
 
-    logger.info(`[report] Download request: from=${fromDt} to=${toDt} status=${status}`);
+    logger.info(`[report] Download request: from=${fromDt} to=${toDt} status=${status} zoneId=${zoneId || "all"}`);
 
-    const rows = await getReportData({ fromDt, toDt, status });
+    const rows = await getReportData({ fromDt, toDt, status, zoneId });
 
     if (!rows.length) {
       return res.status(404).json({ success: false, message: "No records found for the selected date range" });
@@ -57,7 +55,7 @@ const download = async (req, res, next) => {
  */
 const preview = async (req, res, next) => {
   try {
-    const { from, to, status = "all" } = req.query;
+    const { from, to, status = "all", zoneId = null } = req.query;
 
     if (!from || !to) {
       return res.status(400).json({ success: false, message: "from and to query params are required" });
@@ -66,7 +64,7 @@ const preview = async (req, res, next) => {
     const fromDt = from.replace("T", " ") + ":00";
     const toDt   = to.replace("T", " ")   + ":59";
 
-    const rows = await getReportData({ fromDt, toDt, status });
+    const rows = await getReportData({ fromDt, toDt, status, zoneId });
 
     const total = rows.length;
     const pass  = rows.filter(r => r.status === "PASS").length;
@@ -87,7 +85,7 @@ const preview = async (req, res, next) => {
  * The scanning process and the user are completely unaffected.
  */
 const sendEmail = async (req, res) => {
-  const { from, to, status = "all" } = req.body;
+  const { from, to, status = "all", zoneId = null } = req.body;
 
   if (!from || !to) {
     return res.status(400).json({ success: false, message: "from and to are required" });
@@ -99,21 +97,20 @@ const sendEmail = async (req, res) => {
   const companyId = req.user?.company_id || 1;
   const userEmail = req.user?.email || "unknown";
 
-  logger.info(`[report-email] Queued by ${userEmail}: from=${fromDt} to=${toDt} status=${status}`);
+  logger.info(`[report-email] Queued by ${userEmail}: from=${fromDt} to=${toDt} status=${status} zoneId=${zoneId || "all"}`);
 
-  // ── Reply immediately — don't await the background work ──────────────────
   res.status(202).json({
     success: true,
     message: "Report is being prepared. You will receive the email in a few minutes.",
   });
 
-  // ── Background processing — runs after response is already sent ──────────
   setImmediate(async () => {
     try {
       const result = await sendReportEmail({
         fromDt,
         toDt,
         status,
+        zoneId,
         fromLabel:  fmtLabel(from),
         toLabel:    fmtLabel(to),
         companyId,

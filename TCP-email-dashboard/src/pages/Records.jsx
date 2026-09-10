@@ -299,7 +299,7 @@ export default function Records() {
             <input
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search by Cycle ID, Zone, or Barcode..."
+              placeholder="Search by Zone or Barcode..."
               className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-50 transition-all shadow-sm"
             />
           </div>
@@ -338,10 +338,8 @@ export default function Records() {
                         className="h-4 w-4 rounded border-slate-300 accent-blue-600 cursor-pointer"
                       />
                     </th>
-                    <th className="px-4 py-3 font-semibold w-20">Cycle ID</th>
                     <th className="px-4 py-3 font-semibold w-20">Zone</th>
-                    <th className="px-4 py-3 font-semibold w-44">Started At</th>
-                    <th className="px-4 py-3 font-semibold w-44">Completed At</th>
+                    <th className="px-4 py-3 font-semibold w-44">Date</th>
                     <th className="px-4 py-3 font-semibold">Barcode(s)</th>
                     <th className="px-4 py-3 font-semibold">Image</th>
                     <th className="px-4 py-3 font-semibold w-24">Status</th>
@@ -365,18 +363,12 @@ export default function Records() {
                             className="h-4 w-4 rounded border-slate-300 accent-blue-600 cursor-pointer"
                           />
                         </td>
-                        <td className="px-4 py-3 font-mono text-xs text-slate-400" title={r.cycle_id}>
-                          {r.cycle_id ? r.cycle_id.substring(0, 8) : r.id}...
-                        </td>
                         <td className="px-4 py-3">
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                            Zone {r.zone_id}
+                            {r.zone_name}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-500">{new Date(r.received_at).toLocaleString("en-US", { timeZone: "Asia/Kolkata" })}</td>
-                        <td className="px-4 py-3 text-xs text-slate-500">
-                          {r.completed_at ? new Date(r.completed_at).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }) : "—"}
-                        </td>
                         <td className="px-4 py-3">
                           {r.barcode
                             ? r.barcode.split("|").map((b, i) => (

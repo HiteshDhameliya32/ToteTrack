@@ -8,7 +8,7 @@
     "dev": "nodemon app.js",
     "db:reset": "node scripts/reset-db.js",
     "build:dashboard": "npm run build --prefix TCP-email-dashboard",
-    "start:all": "node scripts/show-network-url.js && concurrently -n \"API,CLEANUP,EMAIL,DASHBOARD\" -c \"cyan,yellow,green,magenta\" \"node app.js\" \"node TCP-node-cleanup/Src/app.js\" \"node TCP-Email/src/app.js\" \"npm run preview --prefix TCP-email-dashboard\"",
+    "start:all": "node scripts/show-network-url.js && concurrently -n \"API,CLEANUP,EMAIL,DASHBOARD\" -c \"cyan,yellow,green,magenta\" \"node app.js\" \"node TCP-node-cleanup/Src/app.js\" \"node TCP-Email/src/app.js\" \"node TCP-email-dashboard/server/prod.cjs\"",
     "dev:all": "node scripts/show-network-url.js && concurrently -n \"API,CLEANUP,EMAIL,DASHBOARD\" -c \"cyan,yellow,green,magenta\" \"nodemon app.js\" \"nodemon TCP-node-cleanup/Src/app.js\" \"nodemon TCP-Email/src/app.js\" \"node TCP-email-dashboard/server/dev.cjs\""
   },
   "keywords": [],
