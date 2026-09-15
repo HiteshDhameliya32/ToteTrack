@@ -5,6 +5,9 @@ const { buildReportEmailHtml }                                 = require("../uti
 const { buildReportZip }                                       = require("./excel.service");
 const logger                                                   = require("../utils/logger");
 
+// Records per email batch
+const BATCH_SIZE = 800;
+
 // ── Shared safe log writer — never throws ─────────────────────────────────
 async function safeLog(payload, companyId) {
   try {
@@ -14,8 +17,92 @@ async function safeLog(payload, companyId) {
   }
 }
 
+// ── Send one batch of rows as a single email ───────────────────────────────
+async function sendBatch({ batch, batchNum, totalBatches, smtp, recipients, companyId }) {
+  const total     = batch.length;
+  const pass      = batch.filter(r => r.status === "PASS").length;
+  const nr        = batch.filter(r => r.status === "NR").length;
+  const dates     = batch.map(r => r.started_at).sort();
+  const fromLabel = dates[0]?.slice(0, 16).replace("T", " ") || "";
+  const toLabel   = dates[dates.length - 1]?.slice(0, 16).replace("T", " ") || "";
+
+  const batchLabel = totalBatches > 1 ? ` [Part ${batchNum}/${totalBatches}]` : "";
+  const action     = `Scheduled Report (PASS: ${pass} / NR: ${nr})${batchLabel}`;
+
+  logger.info(`[scheduler] Batch ${batchNum}/${totalBatches} — ${total} cycles (PASS:${pass} NR:${nr}) ${fromLabel} → ${toLabel}`);
+
+  // Build ZIP
+  let attachments = [];
+  try {
+    const zipBuffer = await buildReportZip(batch);
+    logger.info(`[scheduler] Batch ${batchNum} ZIP built: ${zipBuffer.length} bytes`);
+    const pad = (n) => String(n).padStart(2, "0");
+    const d   = new Date();
+    const ts  = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    attachments = [{ filename: `TCP_Report_${ts}_part${batchNum}.zip`, content: zipBuffer, contentType: "application/zip" }];
+  } catch (zipErr) {
+    logger.error(`[scheduler] Batch ${batchNum} ZIP build failed: ${zipErr.message}`);
+    await safeLog({
+      record_count:  total,
+      status:        "failed",
+      error_message: `ZIP build failed: ${zipErr.message}`,
+      date_from:     fromLabel,
+      date_to:       toLabel,
+      action,
+      recipients:    recipients.join(", "),
+    }, companyId);
+    return { success: false, error: zipErr.message };
+  }
+
+  const html = buildReportEmailHtml({
+    rows: batch, fromLabel, toLabel, total, pass, nr,
+    recipientCount: recipients.length,
+  });
+
+  // Create transporter right before send
+  try {
+    const transporter = await createTransporter(companyId);
+    await transporter.sendMail({
+      from:        `${smtp.from_name} <${smtp.user}>`,
+      to:          recipients.join(", "),
+      subject:     `ToteTrack Cycle Report — ${total} cycles (PASS: ${pass} / NR: ${nr}) | ${fromLabel}${batchLabel}`,
+      html,
+      attachments,
+    });
+
+    // Mark this batch as sent immediately after successful send
+    const ids = batch.map(r => r.id);
+    await markCyclesSent(ids);
+
+    await safeLog({
+      record_count: total,
+      status:       "success",
+      date_from:    fromLabel,
+      date_to:      toLabel,
+      action,
+      recipients:   recipients.join(", "),
+    }, companyId);
+
+    logger.info(`[scheduler] Batch ${batchNum}/${totalBatches} sent — ${total} cycles marked as sent`);
+    return { success: true, count: total, pass, nr };
+
+  } catch (err) {
+    await safeLog({
+      record_count:  total,
+      status:        "failed",
+      error_message: err.message,
+      date_from:     fromLabel,
+      date_to:       toLabel,
+      action,
+      recipients:    recipients.join(", "),
+    }, companyId);
+    logger.error(`[scheduler] Batch ${batchNum}/${totalBatches} send failed: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// SCHEDULER — sends all unsent zone_cycles for a company
+// SCHEDULER — sends all unsent zone_cycles in batches of BATCH_SIZE
 // ─────────────────────────────────────────────────────────────────────────────
 async function sendEmailReport(companyId = 1) {
   logger.info(`[scheduler] Email job triggered for Company ID ${companyId}`);
@@ -46,93 +133,87 @@ async function sendEmailReport(companyId = 1) {
     return { skipped: true, reason: "SMTP settings not configured" };
   }
 
-  const rows      = await getUnsentCycles(companyId);
-  const total     = rows.length;
-  const pass      = rows.filter(r => r.status === "PASS").length;
-  const nr        = rows.filter(r => r.status === "NR").length;
-  const dates     = rows.map(r => r.started_at).sort();
-  const fromLabel = dates[0]?.slice(0, 16).replace("T", " ") || "";
-  const toLabel   = dates[dates.length - 1]?.slice(0, 16).replace("T", " ") || "";
+  const allRows = await getUnsentCycles(companyId);
 
-  if (!total) {
+  // ── 0-record notification ─────────────────────────────────────────────────
+  if (!allRows.length) {
     logger.info(`[scheduler] No unsent cycles for Company ID ${companyId} — sending 0-record notification.`);
-  } else {
-    logger.info(`[scheduler] Sending ${total} cycles (PASS:${pass} NR:${nr}) from ${fromLabel} → ${toLabel}`);
+    const html = buildReportEmailHtml({
+      rows: [], fromLabel: "", toLabel: "", total: 0, pass: 0, nr: 0,
+      recipientCount: recipients.length,
+    });
+    try {
+      const transporter = await createTransporter(companyId);
+      await transporter.sendMail({
+        from:    `${smtp.from_name} <${smtp.user}>`,
+        to:      recipients.join(", "),
+        subject: `ToteTrack Cycle Report — 0 cycles | Scheduled`,
+        html,
+      });
+      await safeLog({
+        record_count: 0,
+        status:       "success",
+        action:       "Scheduled Report (0 cycles)",
+        recipients:   recipients.join(", "),
+      }, companyId);
+      logger.info(`[scheduler] 0-record notification sent`);
+    } catch (err) {
+      await safeLog({
+        record_count:  0,
+        status:        "failed",
+        error_message: err.message,
+        action:        "Scheduled Report (0 cycles)",
+        recipients:    recipients.join(", "),
+      }, companyId);
+      logger.error(`[scheduler] 0-record notification failed: ${err.message}`);
+    }
+    return { success: true, count: 0 };
   }
 
-  // Build ZIP (empty ZIP when 0 records)
-  let zipBuffer;
-  try {
-    zipBuffer = await buildReportZip(rows);
-    logger.info(`[scheduler] ZIP built: ${zipBuffer.length} bytes`);
-  } catch (zipErr) {
-    logger.error(`[scheduler] ZIP build failed: ${zipErr.message}`);
-    await safeLog({
-      record_count:  total,
-      status:        "failed",
-      error_message: `ZIP build failed: ${zipErr.message}`,
-      date_from:     fromLabel,
-      date_to:       toLabel,
-      action:        "Scheduled Report",
-      recipients:    recipients.join(", "),
-    }, companyId);
-    return { success: false, error: zipErr.message };
+  // ── Split into batches of BATCH_SIZE ──────────────────────────────────────
+  const batches = [];
+  for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
+    batches.push(allRows.slice(i, i + BATCH_SIZE));
   }
 
-  const html = buildReportEmailHtml({
-    rows, fromLabel, toLabel, total, pass, nr,
-    recipientCount: recipients.length,
-  });
+  const totalBatches = batches.length;
+  logger.info(`[scheduler] ${allRows.length} unsent cycles → ${totalBatches} batch(es) of up to ${BATCH_SIZE}`);
 
-  const pad = (n) => String(n).padStart(2, "0");
-  const d   = new Date();
-  const ts  = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+  let totalSent  = 0;
+  let totalPass  = 0;
+  let totalNr    = 0;
+  let failedBatches = 0;
 
-  try {
-    // Create transporter right before sending — not before ZIP build
-    const transporter = await createTransporter(companyId);
-    await transporter.sendMail({
-      from:    `${smtp.from_name} <${smtp.user}>`,
-      to:      recipients.join(", "),
-      subject: `ToteTrack Cycle Report — ${total} cycles (PASS: ${pass} / NR: ${nr}) | ${fromLabel || "Scheduled"}`,
-      html,
-      attachments: [{
-        filename:    `TCP_Report_${ts}.zip`,
-        content:     zipBuffer,
-        contentType: "application/zip",
-      }],
+  for (let i = 0; i < batches.length; i++) {
+    const result = await sendBatch({
+      batch:        batches[i],
+      batchNum:     i + 1,
+      totalBatches,
+      smtp,
+      recipients,
+      companyId,
     });
 
-    if (total > 0) {
-      const ids = rows.map(r => r.id);
-      await markCyclesSent(ids);
+    if (result.success) {
+      totalSent += result.count;
+      totalPass += result.pass;
+      totalNr   += result.nr;
+    } else {
+      failedBatches++;
+      // Continue sending remaining batches even if one fails
+      logger.warn(`[scheduler] Batch ${i + 1} failed — continuing with remaining batches`);
     }
-
-    await safeLog({
-      record_count: total,
-      status:       "success",
-      date_from:    fromLabel,
-      date_to:      toLabel,
-      action:       `Scheduled Report (PASS: ${pass} / NR: ${nr})`,
-      recipients:   recipients.join(", "),
-    }, companyId);
-
-    logger.info(`[scheduler] Email sent — ${total} cycles${total > 0 ? " marked as sent" : " (0-record notification)"}`);
-    return { success: true, count: total, pass, nr };
-
-  } catch (err) {
-    await safeLog({
-      record_count:  total,
-      status:        "failed",
-      error_message: err.message,
-      date_from:     fromLabel,
-      date_to:       toLabel,
-      action:        "Scheduled Report",
-      recipients:    recipients.join(", "),
-    }, companyId);
-    logger.error(`[scheduler] Email failed: ${err.message}`);
-    return { success: false, error: err.message };
   }
+
+  logger.info(`[scheduler] Job complete — sent: ${totalSent}, failed batches: ${failedBatches}/${totalBatches}`);
+  return {
+    success:       failedBatches < totalBatches,
+    count:         totalSent,
+    pass:          totalPass,
+    nr:            totalNr,
+    totalBatches,
+    failedBatches,
+  };
 }
 
 module.exports = { sendEmailReport, sendReportEmail };
@@ -177,7 +258,7 @@ async function sendReportEmail({ fromDt, toDt, status = "all", zoneId = null, fr
     return { skipped: true, reason: "SMTP settings not configured" };
   }
 
-  // ── Data (0 records is allowed — still send) ──────────────────────────────
+  // ── Data ──────────────────────────────────────────────────────────────────
   const rows  = await getReportData({ fromDt, toDt, status, zoneId });
   const total = rows.length;
   const pass  = rows.filter(r => r.status === "PASS").length;
@@ -189,23 +270,29 @@ async function sendReportEmail({ fromDt, toDt, status = "all", zoneId = null, fr
     logger.info(`[report-email] ${total} records (PASS:${pass} NR:${nr})`);
   }
 
-  // ── Build ZIP ─────────────────────────────────────────────────────────────
-  let zipBuffer;
-  try {
-    zipBuffer = await buildReportZip(rows);
-    logger.info(`[report-email] ZIP built: ${zipBuffer.length} bytes`);
-  } catch (zipErr) {
-    logger.error(`[report-email] ZIP build failed: ${zipErr.message}`);
-    await safeLog({
-      record_count:  total,
-      status:        "failed",
-      error_message: `ZIP build failed: ${zipErr.message}`,
-      date_from:     fromDt,
-      date_to:       toDt,
-      action,
-      recipients:    recipients.join(", "),
-    }, companyId);
-    throw zipErr;
+  // ── Build ZIP (skip for 0 records) ────────────────────────────────────────
+  let attachments = [];
+  if (total > 0) {
+    try {
+      const zipBuffer = await buildReportZip(rows);
+      logger.info(`[report-email] ZIP built: ${zipBuffer.length} bytes`);
+      const pad = (n) => String(n).padStart(2, "0");
+      const d   = new Date();
+      const ts  = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+      attachments = [{ filename: `TCP_Report_${ts}.zip`, content: zipBuffer, contentType: "application/zip" }];
+    } catch (zipErr) {
+      logger.error(`[report-email] ZIP build failed: ${zipErr.message}`);
+      await safeLog({
+        record_count:  total,
+        status:        "failed",
+        error_message: `ZIP build failed: ${zipErr.message}`,
+        date_from:     fromDt,
+        date_to:       toDt,
+        action,
+        recipients:    recipients.join(", "),
+      }, companyId);
+      throw zipErr;
+    }
   }
 
   // ── Build HTML ────────────────────────────────────────────────────────────
@@ -217,10 +304,6 @@ async function sendReportEmail({ fromDt, toDt, status = "all", zoneId = null, fr
     recipientCount: recipients.length,
   });
 
-  const pad = (n) => String(n).padStart(2, "0");
-  const d   = new Date();
-  const ts  = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
-
   // ── Send — transporter created right before send ──────────────────────────
   try {
     const transporter = await createTransporter(companyId);
@@ -229,11 +312,7 @@ async function sendReportEmail({ fromDt, toDt, status = "all", zoneId = null, fr
       to:      recipients.join(", "),
       subject: `ToteTrack Cycle Report — ${total} cycles (PASS: ${pass} / NR: ${nr}) | ${fromLabel || fromDt}`,
       html,
-      attachments: [{
-        filename:    `TCP_Report_${ts}.zip`,
-        content:     zipBuffer,
-        contentType: "application/zip",
-      }],
+      attachments,
     });
 
     await safeLog({
