@@ -1,5 +1,18 @@
 const db = require("../config/db");
 
+// ── IST timestamp ──────────────────────────────────────
+function getKolkataTimeStr(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  });
+  const p = formatter.formatToParts(date);
+  const g = (type) => p.find(x => x.type === type).value;
+  return `${g("year")}-${g("month")}-${g("day")} ${g("hour")}:${g("minute")}:${g("second")}`;
+}
+
 // ── Helper ─────────────────────────────────────────────
 function shouldFilter(isSuperAdmin, companyId) {
   if (isSuperAdmin && !companyId) return false;
@@ -110,8 +123,9 @@ async function deleteRecipient(id, companyId, isSuperAdmin = false) {
 // ── Email Logs ─────────────────────────────────────────
 async function createEmailLog({ record_count, status, error_message, date_from, date_to, action, recipients }, companyId) {
   const [result] = await db.execute(
-    "INSERT INTO email_logs (record_count, status, error_message, date_from, date_to, action, recipients, company_id) VALUES (?,?,?,?,?,?,?,?)",
+    "INSERT INTO email_logs (sent_at, record_count, status, error_message, date_from, date_to, action, recipients, company_id) VALUES (?,?,?,?,?,?,?,?,?)",
     [
+      getKolkataTimeStr(),
       record_count,
       status,
       error_message || null,

@@ -23,6 +23,10 @@ async function createTransporter(companyId) {
       user: String(smtp.user).trim(),
       pass: String(smtp.pass).trim(),
     },
+    pool:              false,    // fresh connection per send — avoids stale socket on corporate networks
+    connectionTimeout: 15000,
+    greetingTimeout:   10000,
+    socketTimeout:     30000,
     tls: {
       rejectUnauthorized: false,
     },

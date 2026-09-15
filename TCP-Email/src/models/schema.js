@@ -122,7 +122,7 @@ async function initSchema() {
       sent_at       TEXT    DEFAULT (datetime('now')),
       record_count  INTEGER DEFAULT 0,
       status        TEXT    DEFAULT 'success'
-                            CHECK(status IN ('success','failed')),
+                            CHECK(status IN ('success','failed','skipped')),
       error_message TEXT    NULL,
       date_from     TEXT    NULL,
       date_to       TEXT    NULL,

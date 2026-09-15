@@ -63,11 +63,11 @@ export default function EmailHistory() {
               <tbody className="divide-y divide-slate-50">
                 {data.rows.map((l) => (
                   <tr key={l.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-5 py-3.5 text-slate-800 font-medium">{new Date(l.sent_at).toLocaleString("en-US", { timeZone: "Asia/Kolkata" })}</td>
+                    <td className="px-5 py-3.5 text-slate-800 font-medium">{l.sent_at?.replace("T", " ").slice(0, 19)}</td>
                     <td className="px-5 py-3.5 text-slate-700">{l.record_count}</td>
                     <td className="px-5 py-3.5 text-slate-500 text-xs font-mono">{l.date_from} → {l.date_to}</td>
                     <td className="px-5 py-3.5">
-                      <Badge color={l.status === "success" ? "green" : "red"}>{l.status}</Badge>
+                      <Badge color={l.status === "success" ? "green" : l.status === "skipped" ? "yellow" : "red"}>{l.status}</Badge>
                     </td>
                     <td className="px-5 py-3.5 text-red-500 text-xs max-w-xs truncate">{l.error_message || "—"}</td>
                   </tr>
