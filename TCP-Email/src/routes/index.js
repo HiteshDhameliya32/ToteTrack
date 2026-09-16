@@ -80,6 +80,55 @@ router.post("/records/send-filtered", authorize("SEND_EMAIL"), records.sendFilte
 router.delete("/records/delete-selected", superAdminOnly, dashboard.deleteSelectedRecords);
 router.delete("/records/delete-filtered", superAdminOnly, dashboard.deleteFilteredRecords);
 
+// ── Database Migration (Super Admin Only) ──────────────
+router.post("/admin/migrate", superAdminOnly, async (req, res, next) => {
+  const started    = Date.now();
+  const initSchema = require("../models/schema");
+  const db         = require("../config/db");
+
+  async function snapshot() {
+    const sqlDb  = await db._getDb();
+    const result = {};
+    const tables = sqlDb.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
+    if (!tables.length) return result;
+    for (const name of tables[0].values.map(r => r[0])) {
+      const info = sqlDb.exec(`PRAGMA table_info(${name})`);
+      result[name] = info.length ? info[0].values.map(r => r[1]) : [];
+    }
+    return result;
+  }
+
+  try {
+    const before  = await snapshot();
+    await initSchema();
+    const after   = await snapshot();
+    const elapsed = Date.now() - started;
+
+    const changes = [];
+    for (const table of Object.keys(after)) {
+      if (!before[table]) {
+        changes.push(`Created table "${table}"`);
+      } else {
+        for (const col of after[table].filter(c => !before[table].includes(c))) {
+          changes.push(`Added column "${col}" to "${table}"`);
+        }
+      }
+    }
+
+    res.json({
+      success:       true,
+      message:       changes.length
+        ? `Migration complete — ${changes.length} change(s) applied.`
+        : "Database is already up to date. No changes needed.",
+      elapsed_ms:    elapsed,
+      changes_count: changes.length,
+      changes,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── Zones list (read-only reference — all zones, for dropdowns) ────────────
 router.get("/zones-list", async (req, res, next) => {
   try {

@@ -165,4 +165,7 @@ export const fmUpload = (path, file) => {
   }).then(r => r.data);
 };
 
+// Database Migration (Super Admin only)
+export const runMigration = () => api.post("/admin/migrate").then(r => r.data);
+
 export default api;

@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
-import { getSmtpSettings, updateSmtpSettings, testEmail } from "../api";
+import { getSmtpSettings, updateSmtpSettings, testEmail, runMigration } from "../api";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import { Spinner } from "../components/ui/Misc";
 import { useToastStore } from "../store/toast.store";
-import { Settings2, Eye, EyeOff, Send, ShieldCheck } from "lucide-react";
+import { useAuth } from "../store/AuthContext";
+import { Settings2, Eye, EyeOff, Send, ShieldCheck, DatabaseZap, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
 
 function Field({ label, error, children }) {
   return (
@@ -21,8 +22,11 @@ function Field({ label, error, children }) {
 export default function Settings() {
   const qc    = useQueryClient();
   const toast = useToastStore((s) => s.addToast);
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "Super Admin";
   const [showPass, setShowPass] = useState(false);
   const [testTo,   setTestTo]   = useState("");
+  const [migrateResult, setMigrateResult] = useState(null);
 
   const { data, isLoading } = useQuery({ queryKey: ["smtp"], queryFn: getSmtpSettings });
   const { register, handleSubmit, reset, formState: { errors } } = useForm();
@@ -49,6 +53,19 @@ export default function Settings() {
     mutationFn: () => testEmail(testTo),
     onSuccess: () => toast("Test email sent successfully ✅"),
     onError: (e) => toast(e.response?.data?.message || "Test failed", "error"),
+  });
+
+  const migrate = useMutation({
+    mutationFn: runMigration,
+    onSuccess: (res) => {
+      setMigrateResult(res);
+      toast(res.message);
+    },
+    onError: (e) => {
+      const msg = e.response?.data?.message || e.message || "Migration failed";
+      setMigrateResult({ success: false, message: msg, changes: [] });
+      toast(msg, "error");
+    },
   });
 
   const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-50 transition-all shadow-sm";
@@ -136,6 +153,58 @@ export default function Settings() {
           </Button>
         </div>
       </Card>
+
+      {isSuperAdmin && (
+        <Card className="max-w-lg mt-5">
+          <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-100">
+            <div className="h-9 w-9 rounded-lg bg-violet-50 flex items-center justify-center">
+              <DatabaseZap size={16} className="text-violet-600" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">Database Migration</h2>
+              <p className="text-xs text-slate-500">Create missing tables and columns — safe to run anytime</p>
+            </div>
+          </div>
+
+          <Button
+            variant="primary"
+            onClick={() => { setMigrateResult(null); migrate.mutate(); }}
+            disabled={migrate.isPending}
+            className="w-full justify-center mb-4"
+          >
+            {migrate.isPending
+              ? <><RefreshCw size={14} className="animate-spin" /> Running migration…</>
+              : <><DatabaseZap size={14} /> Run Migration</>
+            }
+          </Button>
+
+          {migrateResult && (
+            <div className={`rounded-lg border p-4 text-sm ${migrateResult.success ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>
+              <div className="flex items-center gap-2 font-semibold mb-2">
+                {migrateResult.success
+                  ? <CheckCircle2 size={15} className="text-emerald-600" />
+                  : <XCircle size={15} className="text-red-500" />
+                }
+                <span className={migrateResult.success ? "text-emerald-700" : "text-red-600"}>
+                  {migrateResult.message}
+                </span>
+              </div>
+              {migrateResult.elapsed_ms && (
+                <p className="text-xs text-slate-400 mb-2">{migrateResult.elapsed_ms}ms</p>
+              )}
+              {migrateResult.changes?.length > 0 && (
+                <ul className="space-y-1">
+                  {migrateResult.changes.map((c, i) => (
+                    <li key={i} className="text-xs text-slate-600 flex items-start gap-1.5">
+                      <span className="text-emerald-500 mt-0.5">✓</span>{c}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
 }

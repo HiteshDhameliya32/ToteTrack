@@ -31,11 +31,15 @@ const download = async (req, res, next) => {
       return res.status(404).json({ success: false, message: "No records found for the selected date range" });
     }
 
-    const d   = new Date();
-    const ts  = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
-    const zipName = `TCP_Report_${ts}.zip`;
+    // Meaningful filename: ToteTrack_Report_20260916_0900_to_20260916_1700.zip
+    function labelToSlug(lbl) { return lbl.replace(/[-: T]/g, "").slice(0, 12); }
+    const fromSlug = labelToSlug(fromDt);
+    const toSlug   = labelToSlug(toDt);
+    const zipName  = `ToteTrack_Report_${fromSlug}_to_${toSlug}.zip`;
 
-    const zipBuf = await buildReportZip(rows);
+    const fromLabel = fromDt.slice(0, 16);
+    const toLabel   = toDt.slice(0, 16);
+    const zipBuf = await buildReportZip(rows, { fromLabel, toLabel });
 
     res.setHeader("Content-Type",        "application/zip");
     res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
@@ -55,7 +59,7 @@ const download = async (req, res, next) => {
  */
 const preview = async (req, res, next) => {
   try {
-    const { from, to, status = "all", zoneId = null } = req.query;
+    const { from, to, status = "all", zoneId = null, emailSent = "all" } = req.query;
 
     if (!from || !to) {
       return res.status(400).json({ success: false, message: "from and to query params are required" });
@@ -64,13 +68,15 @@ const preview = async (req, res, next) => {
     const fromDt = from.replace("T", " ") + ":00";
     const toDt   = to.replace("T", " ")   + ":59";
 
-    const rows = await getReportData({ fromDt, toDt, status, zoneId });
+    const rows = await getReportData({ fromDt, toDt, status, zoneId, emailSent });
 
-    const total = rows.length;
-    const pass  = rows.filter(r => r.status === "PASS").length;
-    const nr    = rows.filter(r => r.status === "NR").length;
+    const total   = rows.length;
+    const pass    = rows.filter(r => r.status === "PASS").length;
+    const nr      = rows.filter(r => r.status === "NR").length;
+    const sent    = rows.filter(r => r.email_sent == 1).length;
+    const pending = rows.filter(r => r.email_sent == 0).length;
 
-    res.json({ success: true, records: rows, total, pass, nr });
+    res.json({ success: true, records: rows, total, pass, nr, sent, pending });
   } catch (err) {
     next(err);
   }

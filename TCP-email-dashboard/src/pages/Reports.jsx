@@ -6,7 +6,7 @@ import Button from "../components/ui/Button";
 import { Badge, Spinner, EmptyState, ErrorState } from "../components/ui/Misc";
 import {
   FileDown, Search, BarChart2, CheckCircle2, XCircle,
-  Calendar, Filter, RefreshCw, Mail, Send,
+  Calendar, Filter, RefreshCw, Mail, Send, Clock,
 } from "lucide-react";
 
 /* ─── helpers ─────────────────────────────────────────── */
@@ -36,6 +36,12 @@ const STATUS_OPTIONS = [
   { value: "NR",   label: "NR Only"   },
 ];
 
+const EMAIL_SENT_OPTIONS = [
+  { value: "all",     label: "All Email Status" },
+  { value: "sent",    label: "Email Sent" },
+  { value: "pending", label: "Email Pending" },
+];
+
 const inputClass =
   "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 " +
   "focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-50 shadow-sm transition-all";
@@ -43,9 +49,11 @@ const inputClass =
 /* ─── Summary card ────────────────────────────────────── */
 function StatCard({ icon: Icon, label, value, color }) {
   const colors = {
-    blue:  "bg-blue-50  border-blue-100  text-blue-700",
-    green: "bg-green-50 border-green-100 text-green-700",
-    red:   "bg-red-50   border-red-100   text-red-700",
+    blue:   "bg-blue-50  border-blue-100  text-blue-700",
+    green:  "bg-green-50 border-green-100 text-green-700",
+    red:    "bg-red-50   border-red-100   text-red-700",
+    amber:  "bg-amber-50 border-amber-100 text-amber-700",
+    emerald:"bg-emerald-50 border-emerald-100 text-emerald-700",
   };
   return (
     <div className={`flex items-center gap-3 rounded-xl border p-4 ${colors[color]}`}>
@@ -67,7 +75,8 @@ export default function Reports() {
   const [to,         setTo]         = useState(() => localNow());
   const [status,     setStatus]     = useState("all");
   const [zoneId,     setZoneId]     = useState("");
-  const [committed,  setCommitted]  = useState({ from: localNow(-24 * 60), to: localNow(), status: "all", zoneId: "" });
+  const [emailSent,  setEmailSent]  = useState("all");
+  const [committed,  setCommitted]  = useState({ from: localNow(-24 * 60), to: localNow(), status: "all", zoneId: "", emailSent: "all" });
   const [downloading, setDownloading] = useState(false);
   const [dlError,    setDlError]    = useState(null);
 
@@ -93,8 +102,8 @@ export default function Reports() {
 
   // Preview query — only fires when user clicks "Apply"
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
-    queryKey: ["reports-preview", committed.from, committed.to, committed.status, committed.zoneId],
-    queryFn:  () => getReportPreview({ from: committed.from, to: committed.to, status: committed.status, zoneId: committed.zoneId || undefined }),
+    queryKey: ["reports-preview", committed.from, committed.to, committed.status, committed.zoneId, committed.emailSent],
+    queryFn:  () => getReportPreview({ from: committed.from, to: committed.to, status: committed.status, zoneId: committed.zoneId || undefined, emailSent: committed.emailSent }),
     enabled:  !!(committed.from && committed.to),
   });
 
@@ -102,10 +111,12 @@ export default function Reports() {
   const total   = data?.total   ?? 0;
   const pass    = data?.pass    ?? 0;
   const nr      = data?.nr      ?? 0;
+  const sent    = data?.sent    ?? 0;
+  const pending = data?.pending ?? 0;
 
   const applyFilter = () => {
     if (!from || !to) return;
-    setCommitted({ from, to, status, zoneId });
+    setCommitted({ from, to, status, zoneId, emailSent });
   };
 
   const handleDownload = async () => {
@@ -216,6 +227,22 @@ export default function Reports() {
             </select>
           </div>
 
+          {/* Email Sent */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+              <Mail size={12} /> Email
+            </label>
+            <select
+              value={emailSent}
+              onChange={(e) => setEmailSent(e.target.value)}
+              className={inputClass + " cursor-pointer"}
+            >
+              {EMAIL_SENT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+
           {/* Buttons */}
           <div className="flex items-center gap-2 pb-0.5">
             <Button onClick={applyFilter} disabled={!from || !to || isFetching}>
@@ -290,10 +317,12 @@ export default function Reports() {
 
       {/* ── Summary stats ───────────────────────────────────── */}
       {total > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <StatCard icon={BarChart2}    label="Total Tote" value={total} color="blue"  />
-          <StatCard icon={CheckCircle2} label="PASS"         value={pass}  color="green" />
-          <StatCard icon={XCircle}      label="NR"           value={nr}    color="red"   />
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+          <StatCard icon={BarChart2}    label="Total Tote" value={total}   color="blue"    />
+          <StatCard icon={CheckCircle2} label="PASS"       value={pass}    color="green"   />
+          <StatCard icon={XCircle}      label="NR"         value={nr}      color="red"     />
+          <StatCard icon={Mail}         label="Email Sent" value={sent}    color="emerald" />
+          <StatCard icon={Clock}        label="Pending"    value={pending} color="amber"   />
         </div>
       )}
 
@@ -319,6 +348,7 @@ export default function Reports() {
                     <th className="px-4 py-3 font-semibold w-20">Status</th>
                     <th className="px-4 py-3 font-semibold">Barcode(s)</th>
                     <th className="px-4 py-3 font-semibold w-28">Image</th>
+                    <th className="px-4 py-3 font-semibold w-28">Email</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -377,6 +407,19 @@ export default function Reports() {
                           : <span className="text-slate-300">—</span>
                         }
                       </td>
+
+                      {/* Email Sent */}
+                      <td className="px-4 py-3">
+                        {r.email_sent == 1 ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
+                            <Mail size={11} /> Sent
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100">
+                            <Clock size={11} /> Pending
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -389,6 +432,8 @@ export default function Reports() {
                 Showing <span className="font-semibold text-slate-700">{records.length}</span> records
                 &nbsp;·&nbsp; PASS: <span className="font-semibold text-green-600">{pass}</span>
                 &nbsp;·&nbsp; NR: <span className="font-semibold text-red-500">{nr}</span>
+                &nbsp;·&nbsp; Email Sent: <span className="font-semibold text-emerald-600">{sent}</span>
+                &nbsp;·&nbsp; Pending: <span className="font-semibold text-amber-600">{pending}</span>
               </span>
               <div className="flex items-center gap-2">
                 <Button

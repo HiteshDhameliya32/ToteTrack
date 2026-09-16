@@ -249,12 +249,14 @@ async function getUnsentCycles(companyId) {
   // zone_cycles has no company_id — join user_tcp_configs to filter by company
   const [rows] = await db.query(
     `SELECT zc.id, zc.cycle_id, zc.zone_id,
+            COALESCE(zc.zone_name, tz.name, 'Zone ' || zc.zone_id) AS zone_name,
             zc.started_at, zc.completed_at,
             zc.status, zc.barcode, zc.image_name,
             zc.completion_reason, zc.expected_devices, zc.received_devices,
             uc.folder_path_ok, uc.folder_path_nr
      FROM zone_cycles zc
      LEFT JOIN user_tcp_configs uc ON uc.zone_id = zc.zone_id AND uc.is_active = 1
+     LEFT JOIN tcp_zones tz ON tz.id = zc.zone_id
      WHERE zc.email_sent = 0 AND zc.status IS NOT NULL
      GROUP BY zc.id
      ORDER BY zc.started_at ASC, zc.id ASC`
@@ -276,19 +278,21 @@ async function markCyclesSent(ids) {
 }
 
 // ── Report Data (date-range, all matching rows, with folder paths) ─────────
-async function getReportData({ fromDt, toDt, status = "all", zoneId = null }) {
+async function getReportData({ fromDt, toDt, status = "all", zoneId = null, emailSent = "all" }) {
   const where  = [];
   const params = [];
 
-  // fromDt / toDt are ISO strings in local time (Asia/Kolkata)
   if (fromDt) { where.push("zc.started_at >= ?"); params.push(fromDt); }
   if (toDt)   { where.push("zc.started_at <= ?"); params.push(toDt);   }
 
   if (status === "PASS") where.push("zc.status = 'PASS'");
   if (status === "NR")   where.push("zc.status = 'NR'");
 
-  // Zone filter — only when a specific zone is selected
   if (zoneId) { where.push("zc.zone_id = ?"); params.push(Number(zoneId)); }
+
+  // Email sent filter
+  if (emailSent === "sent")    where.push("zc.email_sent = 1");
+  if (emailSent === "pending") where.push("zc.email_sent = 0");
 
   const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
@@ -298,6 +302,7 @@ async function getReportData({ fromDt, toDt, status = "all", zoneId = null }) {
             zc.started_at, zc.completed_at,
             zc.status, zc.barcode, zc.image_name,
             zc.completion_reason, zc.expected_devices, zc.received_devices,
+            zc.email_sent, zc.email_sent_at,
             uc.folder_path_ok, uc.folder_path_nr
      FROM zone_cycles zc
      LEFT JOIN user_tcp_configs uc ON uc.zone_id = zc.zone_id AND uc.is_active = 1
@@ -308,7 +313,6 @@ async function getReportData({ fromDt, toDt, status = "all", zoneId = null }) {
     params
   );
 
-  // Resolve the correct folder path per row
   return rows.map(r => ({
     ...r,
     folder_path: r.status === "PASS" ? r.folder_path_ok : r.folder_path_nr,
