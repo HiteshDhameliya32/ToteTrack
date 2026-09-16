@@ -113,6 +113,8 @@ export default function Reports() {
   const nr      = data?.nr      ?? 0;
   const sent    = data?.sent    ?? 0;
   const pending = data?.pending ?? 0;
+  const truncated    = data?.truncated    ?? false;
+  const previewLimit = data?.previewLimit ?? 500;
 
   const applyFilter = () => {
     if (!from || !to) return;
@@ -323,6 +325,14 @@ export default function Reports() {
           <StatCard icon={XCircle}      label="NR"         value={nr}      color="red"     />
           <StatCard icon={Mail}         label="Email Sent" value={sent}    color="emerald" />
           <StatCard icon={Clock}        label="Pending"    value={pending} color="amber"   />
+        </div>
+      )}
+
+      {/* ── Truncation notice ───────────────────────────────── */}
+      {truncated && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
+          <Filter size={14} className="shrink-0" />
+          Showing first <span className="font-semibold">{previewLimit.toLocaleString()}</span> of <span className="font-semibold">{total.toLocaleString()}</span> records in the preview table. All {total.toLocaleString()} records are included in the Download ZIP and Email Report.
         </div>
       )}
 

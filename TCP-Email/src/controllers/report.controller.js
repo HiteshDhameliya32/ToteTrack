@@ -31,15 +31,22 @@ const download = async (req, res, next) => {
       return res.status(404).json({ success: false, message: "No records found for the selected date range" });
     }
 
-    // Meaningful filename: ToteTrack_Report_20260916_0900_to_20260916_1700.zip
+    // Meaningful filename
     function labelToSlug(lbl) { return lbl.replace(/[-: T]/g, "").slice(0, 12); }
-    const fromSlug = labelToSlug(fromDt);
-    const toSlug   = labelToSlug(toDt);
-    const zipName  = `ToteTrack_Report_${fromSlug}_to_${toSlug}.zip`;
-
+    const fromSlug  = labelToSlug(fromDt);
+    const toSlug    = labelToSlug(toDt);
+    const zipName   = `ToteTrack_Report_${fromSlug}_to_${toSlug}.zip`;
     const fromLabel = fromDt.slice(0, 16);
     const toLabel   = toDt.slice(0, 16);
-    const zipBuf = await buildReportZip(rows, { fromLabel, toLabel });
+
+    // Apply same image threshold as email — keeps download fast and under size limits
+    const IMAGE_THRESHOLD = 1500;
+    const includeImages = rows.length <= IMAGE_THRESHOLD;
+    if (!includeImages) {
+      logger.info(`[report] ${rows.length} records > ${IMAGE_THRESHOLD} — skipping images in download ZIP`);
+    }
+
+    const zipBuf = await buildReportZip(rows, { fromLabel, toLabel, includeImages });
 
     res.setHeader("Content-Type",        "application/zip");
     res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
@@ -76,7 +83,12 @@ const preview = async (req, res, next) => {
     const sent    = rows.filter(r => r.email_sent == 1).length;
     const pending = rows.filter(r => r.email_sent == 0).length;
 
-    res.json({ success: true, records: rows, total, pass, nr, sent, pending });
+    // Cap preview table at 500 rows — stats always reflect full count
+    const PREVIEW_LIMIT = 500;
+    const records = rows.slice(0, PREVIEW_LIMIT);
+    const truncated = total > PREVIEW_LIMIT;
+
+    res.json({ success: true, records, total, pass, nr, sent, pending, truncated, previewLimit: PREVIEW_LIMIT });
   } catch (err) {
     next(err);
   }

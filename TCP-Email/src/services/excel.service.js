@@ -136,18 +136,18 @@ function resolveImagePath(row) {
   }
 }
 
-async function buildReportZip(rows, { fromLabel = "", toLabel = "" } = {}) {
-  // Pre-resolve image paths for NR rows — never throws
+async function buildReportZip(rows, { fromLabel = "", toLabel = "", includeImages = true } = {}) {
+  // Pre-resolve image paths for NR rows — only when includeImages is true
   rows.forEach(r => {
-    if (r.status === "NR") {
+    if (r.status === "NR" && includeImages) {
       const imgPath = resolveImagePath(r);
       r.resolvedImageName = imgPath ? path.basename(imgPath) : null;
       r.resolvedImagePath = imgPath || null;
-      r.imageNotFound     = !imgPath && !!r.image_name; // flag for Excel note
+      r.imageNotFound     = !imgPath && !!r.image_name;
     } else {
       r.resolvedImageName = null;
       r.resolvedImagePath = null;
-      r.imageNotFound     = false;
+      r.imageNotFound     = r.status === "NR" && !!r.image_name && !includeImages;
     }
   });
 
@@ -198,16 +198,18 @@ async function buildReportZip(rows, { fromLabel = "", toLabel = "" } = {}) {
     archive.append(Buffer.from(excelBuf), { name: excelName });
 
     let imagesAdded = 0;
-    rows.filter(r => r.status === "NR").forEach(r => {
-      if (r.resolvedImagePath && fs.existsSync(r.resolvedImagePath)) {
-        archive.file(r.resolvedImagePath, { name: `images/${r.resolvedImageName}` });
-        imagesAdded++;
-      } else if (r.image_name) {
-        logger.warn(`[report] NR image not found for cycle ${r.cycle_id} — image_name="${r.image_name}" folder="${r.folder_path}"`);
-      }
-    });
+    if (includeImages) {
+      rows.filter(r => r.status === "NR").forEach(r => {
+        if (r.resolvedImagePath && fs.existsSync(r.resolvedImagePath)) {
+          archive.file(r.resolvedImagePath, { name: `images/${r.resolvedImageName}` });
+          imagesAdded++;
+        } else if (r.image_name) {
+          logger.warn(`[report] NR image not found for cycle ${r.cycle_id} — image_name="${r.image_name}" folder="${r.folder_path}"`);
+        }
+      });
+    }
 
-    logger.info(`[report] ZIP: ${rows.length} records, ${imagesAdded} NR images`);
+    logger.info(`[report] ZIP: ${rows.length} records, ${imagesAdded} NR images${!includeImages ? " (images skipped — record count above threshold)" : ""}`);
     archive.finalize();
   });
 }
@@ -273,9 +275,11 @@ async function buildReportExcel(rows) {
         image_name: r.status === "NR"
           ? (r.resolvedImageName
               ? r.resolvedImageName
-              : r.image_name
+              : r.imageNotFound
                 ? `${r.image_name} (not found)`
-                : "—")
+                : r.image_name
+                  ? `${r.image_name} (not included — use Download ZIP)`
+                  : "—")
           : "—",
       });
 

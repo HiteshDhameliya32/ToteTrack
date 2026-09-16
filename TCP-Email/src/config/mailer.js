@@ -24,9 +24,9 @@ async function createTransporter(companyId) {
       pass: String(smtp.pass).trim(),
     },
     pool:              false,    // fresh connection per send — avoids stale socket on corporate networks
-    connectionTimeout: 15000,
-    greetingTimeout:   10000,
-    socketTimeout:     30000,
+    connectionTimeout: 30000,   // 30s to establish connection
+    greetingTimeout:   15000,   // 15s to receive SMTP greeting
+    socketTimeout:     300000,  // 5 minutes — enough to upload large ZIPs on slow corporate networks
     tls: {
       rejectUnauthorized: false,
     },

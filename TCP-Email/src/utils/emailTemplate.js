@@ -72,7 +72,7 @@ function buildEmailHtml({ records, dateFrom, dateTo }) {
  * @param {number} opts.nr
  * @param {number} opts.recipientCount
  */
-function buildReportEmailHtml({ rows, fromLabel, toLabel, total, pass, nr, recipientCount }) {
+function buildReportEmailHtml({ rows, fromLabel, toLabel, total, pass, nr, recipientCount, includeImages = true }) {
   const passRate = total > 0 ? Math.round((pass / total) * 100) : 0;
 
   // ── Build per-zone stats ──────────────────────────────────────────────────
@@ -176,7 +176,12 @@ function buildReportEmailHtml({ rows, fromLabel, toLabel, total, pass, nr, recip
     <p style="margin:0;font-size:13px;color:#0369a1">
       &#128206; <strong>Attached:</strong> <code style="background:#e0f2fe;padding:1px 5px;border-radius:3px">ToteTrack_Report_[date].xlsx</code>
       with ${zoneMap.size > 0 ? `${zoneMap.size} zone sheet${zoneMap.size > 1 ? "s" : ""}: ${sheetList}` : "no data"}
-      ${nr > 0 ? ` &nbsp;+&nbsp; <code style="background:#e0f2fe;padding:1px 5px;border-radius:3px">images/</code> folder with <strong>${nr} NR image${nr !== 1 ? "s" : ""}</strong>` : " (no NR images)"}
+      ${includeImages && nr > 0
+        ? ` &nbsp;+&nbsp; <code style="background:#e0f2fe;padding:1px 5px;border-radius:3px">images/</code> folder with <strong>${nr} NR image${nr !== 1 ? "s" : ""}</strong>`
+        : nr > 0
+          ? ` &nbsp;&mdash;&nbsp; <span style="color:#b45309">NR images not attached (${total} records &gt; 1500 limit). Use the Reports page Download button to get images.</span>`
+          : " (no NR images)"
+      }
     </p>
   </div>
 
