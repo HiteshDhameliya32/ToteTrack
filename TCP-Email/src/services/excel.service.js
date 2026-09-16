@@ -72,10 +72,19 @@ async function generateExcelBuffer(records) {
 async function createImagesZip(records) {
   return new Promise((resolve, reject) => {
     const archive = archiver("zip", { zlib: { level: 6 } });
-    const chunks  = [];
-    archive.on("data",  chunk => chunks.push(chunk));
+    const parts   = [];
+    let totalLen  = 0;
+
+    archive.on("data",  chunk => { parts.push(chunk); totalLen += chunk.length; });
     archive.on("error", reject);
-    archive.on("end",   () => resolve(Buffer.concat(chunks)));
+    archive.on("end", () => {
+      try {
+        const result = Buffer.allocUnsafe(totalLen);
+        let offset = 0;
+        for (const part of parts) { part.copy(result, offset); offset += part.length; }
+        resolve(result);
+      } catch (err) { reject(err); }
+    });
 
     records.forEach(record => {
       if (record.barcode && String(record.barcode).trim() !== "") return; // skip PASS
@@ -155,10 +164,36 @@ async function buildReportZip(rows, { fromLabel = "", toLabel = "" } = {}) {
 
   return new Promise((resolve, reject) => {
     const archive = archiver("zip", { zlib: { level: 6 } });
-    const chunks  = [];
-    archive.on("data",  c  => chunks.push(c));
-    archive.on("error", reject);
-    archive.on("end",   () => resolve(Buffer.concat(chunks)));
+
+    // Collect into a single growing buffer using pre-allocated chunks
+    // Avoids the V8 "cannot create string longer than 0x1fffff0e8" error
+    // that occurs when Buffer.concat is called on thousands of tiny chunks
+    const parts = [];
+    let totalLen = 0;
+
+    archive.on("data", (chunk) => {
+      parts.push(chunk);
+      totalLen += chunk.length;
+    });
+
+    archive.on("error", (err) => {
+      reject(err);
+    });
+
+    archive.on("end", () => {
+      try {
+        // Allocate one buffer of the exact final size and copy all chunks into it
+        const result = Buffer.allocUnsafe(totalLen);
+        let offset = 0;
+        for (const part of parts) {
+          part.copy(result, offset);
+          offset += part.length;
+        }
+        resolve(result);
+      } catch (concatErr) {
+        reject(concatErr);
+      }
+    });
 
     archive.append(Buffer.from(excelBuf), { name: excelName });
 
