@@ -5,7 +5,32 @@ import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import { Badge, Spinner, EmptyState, ErrorState } from "../components/ui/Misc";
 import { useToastStore } from "../store/toast.store";
-import { Send, History } from "lucide-react";
+import { Send, ChevronDown, ChevronUp } from "lucide-react";
+
+/* ─── Expandable error cell ──────────────────────────── */
+function ErrorCell({ message }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!message) return <span className="text-slate-300">—</span>;
+
+  const isLong = message.length > 80;
+  return (
+    <div className="text-xs text-red-500">
+      <span className={!expanded && isLong ? "line-clamp-2" : "break-all"}>
+        {message}
+      </span>
+      {isLong && (
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="mt-0.5 flex items-center gap-0.5 text-[10px] text-slate-400 hover:text-slate-600 transition-colors"
+        >
+          {expanded
+            ? <><ChevronUp size={10} /> Show less</>
+            : <><ChevronDown size={10} /> Show more</>}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function EmailHistory() {
   const [page, setPage] = useState(1);
@@ -50,30 +75,50 @@ export default function EmailHistory() {
           <div className="p-6"><EmptyState message="No emails sent yet" /></div>
         ) : (
           <>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs text-slate-500">
-                  <th className="px-5 py-3 font-semibold">Sent At</th>
-                  <th className="px-5 py-3 font-semibold">Records</th>
-                  <th className="px-5 py-3 font-semibold">Date Range</th>
-                  <th className="px-5 py-3 font-semibold">Status</th>
-                  <th className="px-5 py-3 font-semibold">Error</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {data.rows.map((l) => (
-                  <tr key={l.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-5 py-3.5 text-slate-800 font-medium">{l.sent_at?.replace("T", " ").slice(0, 19)}</td>
-                    <td className="px-5 py-3.5 text-slate-700">{l.record_count}</td>
-                    <td className="px-5 py-3.5 text-slate-500 text-xs font-mono">{l.date_from} → {l.date_to}</td>
-                    <td className="px-5 py-3.5">
-                      <Badge color={l.status === "success" ? "green" : l.status === "skipped" ? "yellow" : "red"}>{l.status}</Badge>
-                    </td>
-                    <td className="px-5 py-3.5 text-red-500 text-xs max-w-xs truncate">{l.error_message || "—"}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs text-slate-500">
+                    <th className="px-5 py-3 font-semibold whitespace-nowrap">Sent At</th>
+                    <th className="px-5 py-3 font-semibold">Action</th>
+                    <th className="px-5 py-3 font-semibold">Records</th>
+                    <th className="px-5 py-3 font-semibold whitespace-nowrap">Date Range</th>
+                    <th className="px-5 py-3 font-semibold">Status</th>
+                    <th className="px-5 py-3 font-semibold w-80">Error</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {data.rows.map((l) => (
+                    <tr key={l.id} className="hover:bg-slate-50 transition-colors align-top">
+                      <td className="px-5 py-3.5 text-slate-800 font-medium whitespace-nowrap">
+                        {l.sent_at?.replace("T", " ").slice(0, 19)}
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-600 text-xs max-w-xs">
+                        {l.action || "—"}
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-700 whitespace-nowrap">
+                        {l.record_count}
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-500 text-xs font-mono whitespace-nowrap">
+                        {l.date_from && l.date_to ? `${l.date_from} → ${l.date_to}` : "—"}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <Badge color={
+                          l.status === "success" ? "green" :
+                          l.status === "skipped" ? "yellow" : "red"
+                        }>
+                          {l.status}
+                        </Badge>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <ErrorCell message={l.error_message} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
             <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
               <span>Total: <span className="font-semibold text-slate-700">{data.total}</span></span>
               <div className="flex items-center gap-2">

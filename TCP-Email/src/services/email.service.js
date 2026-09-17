@@ -3,19 +3,23 @@ const { getUnsentCycles, markCyclesSent, getReportData }       = require("../mod
 const { getActiveRecipients, createEmailLog, getSmtpSettings } = require("../models/email.model");
 const { buildReportEmailHtml }                                 = require("../utils/emailTemplate");
 const { buildReportZip }                                       = require("./excel.service");
-const logger                                                   = require("../utils/logger");
+const emailLogger                                              = require("../utils/emailLogger");
 const fs                                                       = require("fs");
 const path                                                     = require("path");
 const os                                                       = require("os");
 
 // Configuration
 const MAX_RETRIES     = 3;
-const RETRY_WAIT_MS   = 30_000; // 30 seconds between retries — gives network time to recover
-const ZONE_GAP_MS     = 30_000; // 30 seconds between zone emails — gives network time to recover
+const RETRY_WAIT_MS   = 30_000; // 30s between retries
+const ZONE_GAP_MS     = 30_000; // 30s between zone emails
 const IMAGE_THRESHOLD = 1500;   // above this, skip NR images per zone
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+function sep(label) {
+  return `─── ${label} ${"─".repeat(Math.max(0, 50 - label.length))}`;
+}
 
 function nowIST() {
   const formatter = new Intl.DateTimeFormat("en-IN", {
@@ -33,7 +37,7 @@ async function safeLog(payload, companyId) {
   try {
     await createEmailLog(payload, companyId);
   } catch (err) {
-    logger.error(`[email-service] Log write failed: ${err.message}`);
+    emailLogger.error(`DB log write failed: ${err.message}`);
   }
 }
 
@@ -52,7 +56,6 @@ function statsOf(rows) {
   return { total, pass, nr };
 }
 
-/** Group rows by zone_name, preserving zone order */
 function groupByZone(rows) {
   const map = new Map();
   for (const r of rows) {
@@ -60,32 +63,49 @@ function groupByZone(rows) {
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(r);
   }
-  return map; // Map<zoneName, rows[]>
+  return map;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CORE SEND — build ZIP then send with retry for one zone's rows
+// CORE SEND — one zone, with ZIP build + retry
 // ─────────────────────────────────────────────────────────────────────────────
 async function buildAndSend({ rows, smtp, recipients, companyId, action, fromLabel, toLabel, zoneName }) {
   const { total, pass, nr } = statsOf(rows);
+  const tag = `[${zoneName}]`;
 
-  // Clean up temp files after send (success or failure)
+  emailLogger.info(`${tag} ${sep("START")}`);
+  emailLogger.info(`${tag} Records : ${total} (PASS: ${pass} / NR: ${nr})`);
+  emailLogger.info(`${tag} Period  : ${fromLabel} → ${toLabel}`);
+  emailLogger.info(`${tag} To      : ${recipients.join(", ")}`);
+
   let tmpZipPath  = null;
   let attachments = [];
 
+  // ── Step 1: Build ZIP ────────────────────────────────────────────────────
   if (total > 0) {
     const includeImages = total <= IMAGE_THRESHOLD;
-    if (!includeImages) {
-      logger.info(`[email-service] ${zoneName}: ${total} records > ${IMAGE_THRESHOLD} — skipping images`);
-    }
-    logger.info(`[email-service] ${zoneName}: Building ZIP for ${total} records (images: ${includeImages})...`);
+    emailLogger.info(`${tag} Step 1 : Building ZIP — images ${includeImages ? "INCLUDED" : `SKIPPED (${total} > ${IMAGE_THRESHOLD} threshold)`}`);
 
     try {
       const zipBuffer = await buildReportZip(rows, { fromLabel, toLabel, includeImages });
-      logger.info(`[email-service] ${zoneName}: ZIP ready — ${zipBuffer.length} bytes`);
+      const sizeKB    = (zipBuffer.length / 1024).toFixed(1);
+      const sizeMB    = zipBuffer.length / (1024 * 1024);
+      emailLogger.info(`${tag} Step 1 : ZIP ready — ${sizeKB} KB`);
 
-      tmpZipPath = path.join(os.tmpdir(), `totetrack_${zoneName.replace(/\s+/g, "_")}_${Date.now()}.zip`);
-      fs.writeFileSync(tmpZipPath, zipBuffer);
+      // Gmail hard limit is 25MB. Base64 encoding adds ~33% overhead.
+      // Safe limit: if ZIP > 18MB, rebuild without images to stay under 25MB.
+      if (sizeMB > 18 && includeImages) {
+        emailLogger.warn(`${tag} Step 1 : ZIP is ${sizeKB} KB > 18 MB — rebuilding without images to stay under Gmail's 25MB limit`);
+        const zipBufferNoImg = await buildReportZip(rows, { fromLabel, toLabel, includeImages: false });
+        const sizeKBNoImg    = (zipBufferNoImg.length / 1024).toFixed(1);
+        emailLogger.info(`${tag} Step 1 : ZIP without images — ${sizeKBNoImg} KB`);
+        tmpZipPath = path.join(os.tmpdir(), `totetrack_${zoneName.replace(/\s+/g, "_")}_${Date.now()}.zip`);
+        fs.writeFileSync(tmpZipPath, zipBufferNoImg);
+      } else {
+        tmpZipPath = path.join(os.tmpdir(), `totetrack_${zoneName.replace(/\s+/g, "_")}_${Date.now()}.zip`);
+        fs.writeFileSync(tmpZipPath, zipBuffer);
+      }
+      emailLogger.info(`${tag} Step 1 : ZIP written to temp file`);
 
       function labelToSlug(lbl) { return lbl.replace(/[-: ]/g, "").slice(0, 13); }
       const pad  = (n) => String(n).padStart(2, "0");
@@ -95,13 +115,10 @@ async function buildAndSend({ rows, smtp, recipients, companyId, action, fromLab
       const to   = toLabel   ? labelToSlug(toLabel)   : from;
       const zipName = `ToteTrack_${zoneName.replace(/\s+/g, "_")}_${from}_to_${to}.zip`;
 
-      attachments = [{
-        filename:    zipName,
-        path:        tmpZipPath,
-        contentType: "application/zip",
-      }];
+      attachments = [{ filename: zipName, path: tmpZipPath, contentType: "application/zip" }];
+      emailLogger.info(`${tag} Step 1 : Attachment name — ${zipName}`);
     } catch (zipErr) {
-      logger.error(`[email-service] ${zoneName}: ZIP build failed: ${zipErr.message}`);
+      emailLogger.error(`${tag} Step 1 : ZIP build FAILED — ${zipErr.message}`);
       await safeLog({
         record_count: total, status: "failed",
         error_message: `ZIP build failed: ${zipErr.message}`,
@@ -111,24 +128,33 @@ async function buildAndSend({ rows, smtp, recipients, companyId, action, fromLab
       }, companyId);
       return { success: false, error: zipErr.message };
     }
+  } else {
+    emailLogger.info(`${tag} Step 1 : No records — skipping ZIP`);
   }
 
+  // ── Step 2: Build HTML ───────────────────────────────────────────────────
+  emailLogger.info(`${tag} Step 2 : Building email HTML...`);
   const includeImages = total <= IMAGE_THRESHOLD;
   const html = buildReportEmailHtml({
     rows, fromLabel, toLabel, total, pass, nr,
     recipientCount: recipients.length,
     includeImages,
   });
+  emailLogger.info(`${tag} Step 2 : HTML ready`);
 
   const subject = `ToteTrack [${zoneName}] — ${total} Totes (PASS: ${pass} / NR: ${nr}) | ${nowIST()}`;
+  emailLogger.info(`${tag} Subject : ${subject}`);
 
+  // ── Step 3: Send with retry ──────────────────────────────────────────────
   let lastError = null;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    logger.info(`[email-service] ${zoneName}: Send attempt ${attempt}/${MAX_RETRIES}...`);
+    emailLogger.info(`${tag} Step 3 : Send attempt ${attempt}/${MAX_RETRIES} — connecting to SMTP...`);
 
     try {
       const transporter = await createTransporter(companyId);
+      emailLogger.info(`${tag} Step 3 : SMTP connected — uploading email...`);
+
       await transporter.sendMail({
         from:    `${smtp.from_name} <${smtp.user}>`,
         to:      recipients.join(", "),
@@ -137,31 +163,33 @@ async function buildAndSend({ rows, smtp, recipients, companyId, action, fromLab
         attachments,
       });
 
+      // ── SUCCESS ────────────────────────────────────────────────────────────
+      emailLogger.info(`${tag} Step 3 : ✅ SENT successfully on attempt ${attempt}`);
+
       if (total > 0) {
+        emailLogger.info(`${tag} Step 4 : Marking ${total} cycles as email_sent=1...`);
         await markCyclesSent(rows.map(r => r.id));
+        emailLogger.info(`${tag} Step 4 : Cycles marked as sent`);
       }
 
       await safeLog({
         record_count: total, status: "success",
         date_from: fromLabel, date_to: toLabel,
-        action: attempt > 1
-          ? `${action} [${zoneName}] (attempt ${attempt})`
-          : `${action} [${zoneName}]`,
+        action: attempt > 1 ? `${action} [${zoneName}] (attempt ${attempt})` : `${action} [${zoneName}]`,
         recipients: recipients.join(", "),
       }, companyId);
 
-      logger.info(`[email-service] ${zoneName}: Sent on attempt ${attempt} — ${total} records`);
-
-      // Clean up temp file
       if (tmpZipPath && fs.existsSync(tmpZipPath)) {
         try { fs.unlinkSync(tmpZipPath); } catch (_) {}
+        emailLogger.info(`${tag} Temp ZIP file cleaned up`);
       }
 
+      emailLogger.info(`${tag} ${sep("DONE")}`);
       return { success: true, count: total, pass, nr };
 
     } catch (err) {
       lastError = err;
-      logger.error(`[email-service] ${zoneName}: Attempt ${attempt}/${MAX_RETRIES} failed: ${err.message}`);
+      emailLogger.error(`${tag} Step 3 : ❌ Attempt ${attempt}/${MAX_RETRIES} FAILED — ${err.message}`);
 
       await safeLog({
         record_count: total, status: "failed",
@@ -172,31 +200,40 @@ async function buildAndSend({ rows, smtp, recipients, companyId, action, fromLab
       }, companyId);
 
       if (attempt < MAX_RETRIES) {
-        logger.info(`[email-service] ${zoneName}: Waiting ${RETRY_WAIT_MS / 1000}s before retry...`);
+        emailLogger.info(`${tag} Waiting ${RETRY_WAIT_MS / 1000}s before retry ${attempt + 1}...`);
         await delay(RETRY_WAIT_MS);
       }
     }
   }
 
-  // Clean up temp file on final failure
   if (tmpZipPath && fs.existsSync(tmpZipPath)) {
     try { fs.unlinkSync(tmpZipPath); } catch (_) {}
   }
 
-  logger.error(`[email-service] ${zoneName}: All ${MAX_RETRIES} attempts failed. Last: ${lastError?.message}`);
+  emailLogger.error(`${tag} ${sep("FAILED — all retries exhausted")}`);
+  emailLogger.error(`${tag} Last error: ${lastError?.message}`);
   return { success: false, error: lastError?.message };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SEND ALL ZONES — sends one email per zone, sequentially with a gap between
+// SEND ALL ZONES — sequential, zone2 starts only after zone1 succeeds
 // ─────────────────────────────────────────────────────────────────────────────
 async function sendAllZones({ rows, smtp, recipients, companyId, action }) {
-  const { fromLabel, toLabel } = dateLabel(rows);
-  const zoneMap = groupByZone(rows);
+  const zoneMap    = groupByZone(rows);
+  const zoneNames  = [...zoneMap.keys()];
+  const totalZones = zoneNames.length;
 
+  emailLogger.info(`═══════════════════════════════════════════════════════`);
+  emailLogger.info(`  EMAIL JOB STARTED — ${nowIST()}`);
+  emailLogger.info(`  Action    : ${action}`);
+  emailLogger.info(`  Total     : ${rows.length} records across ${totalZones} zone(s)`);
+  emailLogger.info(`  Zones     : ${zoneNames.join(", ") || "none"}`);
+  emailLogger.info(`  Recipients: ${recipients.join(", ")}`);
+  emailLogger.info(`═══════════════════════════════════════════════════════`);
+
+  // 0-record notification
   if (zoneMap.size === 0) {
-    // 0 records — send one notification email with no attachment
-    logger.info(`[email-service] 0 records — sending empty notification`);
+    emailLogger.info(`No unsent records — sending 0-record notification email`);
     const html = buildReportEmailHtml({
       rows: [], fromLabel: "", toLabel: "", total: 0, pass: 0, nr: 0,
       recipientCount: recipients.length, includeImages: false,
@@ -209,111 +246,105 @@ async function sendAllZones({ rows, smtp, recipients, companyId, action }) {
         subject: `ToteTrack Report — 0 Totes | ${nowIST()}`,
         html,
       });
+      emailLogger.info(`0-record notification sent ✅`);
       await safeLog({ record_count: 0, status: "success", action: `${action} (0 records)`, recipients: recipients.join(", ") }, companyId);
     } catch (err) {
+      emailLogger.error(`0-record notification FAILED — ${err.message}`);
       await safeLog({ record_count: 0, status: "failed", error_message: err.message, action: `${action} (0 records)`, recipients: recipients.join(", ") }, companyId);
     }
+    emailLogger.info(`═══════════════════════════════════════════════════════`);
     return { success: true, count: 0, zones: 0 };
   }
 
-  const zoneNames    = [...zoneMap.keys()];
-  const totalZones   = zoneNames.length;
-  let totalSent      = 0;
-  let failedZones    = 0;
-
-  logger.info(`[email-service] Sending ${rows.length} records across ${totalZones} zone(s): ${zoneNames.join(", ")}`);
+  let totalSent  = 0;
+  let failedZones = 0;
 
   for (let i = 0; i < zoneNames.length; i++) {
     const zoneName = zoneNames[i];
     const zoneRows = zoneMap.get(zoneName);
-    const { fromLabel: zFrom, toLabel: zTo } = dateLabel(zoneRows);
+    const { fromLabel, toLabel } = dateLabel(zoneRows);
 
-    logger.info(`[email-service] Zone ${i + 1}/${totalZones}: ${zoneName} — ${zoneRows.length} records`);
+    emailLogger.info(`Processing zone ${i + 1} of ${totalZones}: ${zoneName}`);
 
     const result = await buildAndSend({
-      rows:       zoneRows,
-      smtp,
-      recipients,
-      companyId,
-      action,
-      fromLabel:  zFrom,
-      toLabel:    zTo,
-      zoneName,
+      rows: zoneRows, smtp, recipients, companyId, action,
+      fromLabel, toLabel, zoneName,
     });
 
     if (result.success) {
       totalSent += result.count;
-      // Only proceed to next zone after this one succeeds
       if (i < zoneNames.length - 1) {
-        logger.info(`[email-service] ${zoneName} done. Waiting ${ZONE_GAP_MS / 1000}s before Zone ${i + 2}/${totalZones}...`);
+        emailLogger.info(`[${zoneName}] ✅ Done. Waiting ${ZONE_GAP_MS / 1000}s before next zone (${zoneNames[i + 1]})...`);
         await delay(ZONE_GAP_MS);
       }
     } else {
       failedZones++;
-      // Stop — do not attempt remaining zones if one fails
-      // They will be picked up on the next scheduler run (still email_sent=0)
-      logger.warn(`[email-service] ${zoneName} failed after all retries — stopping. Remaining zones will be sent on next scheduler run.`);
+      emailLogger.error(`[${zoneName}] ❌ Failed after all retries — stopping job. Remaining zones will retry on next scheduler run.`);
       break;
     }
   }
 
-  logger.info(`[email-service] All zones done — sent: ${totalSent}, failed zones: ${failedZones}/${totalZones}`);
+  const status = failedZones === 0 ? "✅ ALL ZONES SENT" : `⚠️  ${failedZones} ZONE(S) FAILED`;
+  emailLogger.info(`═══════════════════════════════════════════════════════`);
+  emailLogger.info(`  EMAIL JOB COMPLETE — ${nowIST()}`);
+  emailLogger.info(`  Status    : ${status}`);
+  emailLogger.info(`  Sent      : ${totalSent} records across ${totalZones - failedZones}/${totalZones} zones`);
+  emailLogger.info(`═══════════════════════════════════════════════════════`);
+
   return { success: failedZones < totalZones, count: totalSent, zones: totalZones, failedZones };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SCHEDULER — sends all unsent zone_cycles, one email per zone
+// SCHEDULER
 // ─────────────────────────────────────────────────────────────────────────────
 async function sendEmailReport(companyId = 1) {
-  logger.info(`[scheduler] Triggered for Company ID ${companyId}`);
+  emailLogger.info(`Scheduler triggered — Company ID ${companyId}`);
 
   const recipients = await getActiveRecipients(companyId);
   if (!recipients.length) {
-    logger.warn(`[scheduler] No active recipients — skipping`);
+    emailLogger.warn(`No active recipients — skipping`);
     await safeLog({ record_count: 0, status: "skipped", error_message: "No active recipients configured", action: "Scheduled Report", recipients: "" }, companyId);
     return { skipped: true, reason: "No active recipients" };
   }
 
   const smtp = await getSmtpSettings(companyId);
   if (!smtp) {
-    logger.warn(`[scheduler] SMTP not configured — skipping`);
+    emailLogger.warn(`SMTP not configured — skipping`);
     await safeLog({ record_count: 0, status: "skipped", error_message: "SMTP settings not configured", action: "Scheduled Report", recipients: recipients.join(", ") }, companyId);
     return { skipped: true, reason: "SMTP settings not configured" };
   }
 
   const rows = await getUnsentCycles(companyId);
-  logger.info(`[scheduler] ${rows.length} unsent records`);
+  emailLogger.info(`Unsent records found: ${rows.length}`);
 
   return sendAllZones({ rows, smtp, recipients, companyId, action: "Scheduled Report" });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MANUAL REPORT — date-range report from the Reports page, one email per zone
+// MANUAL REPORT
 // ─────────────────────────────────────────────────────────────────────────────
 async function sendReportEmail({ fromDt, toDt, status = "all", zoneId = null, fromLabel, toLabel, companyId = 1 }) {
-  logger.info(`[report-email] Triggered: from=${fromDt} to=${toDt} status=${status} zoneId=${zoneId || "all"}`);
+  emailLogger.info(`Manual report triggered — from=${fromDt} to=${toDt} status=${status} zoneId=${zoneId || "all"}`);
 
   const action = `Manual Report (${status === "all" ? "All" : status}) ${fromLabel || fromDt} → ${toLabel || toDt}`;
 
   const recipients = await getActiveRecipients(companyId);
   if (!recipients.length) {
-    logger.warn("[report-email] No active recipients — skipping");
+    emailLogger.warn(`No active recipients — skipping`);
     await safeLog({ record_count: 0, status: "skipped", error_message: "No active recipients configured", date_from: fromDt, date_to: toDt, action, recipients: "" }, companyId);
     return { skipped: true, reason: "No active recipients configured" };
   }
 
   const smtp = await getSmtpSettings(companyId);
   if (!smtp) {
-    logger.warn("[report-email] SMTP not configured — skipping");
+    emailLogger.warn(`SMTP not configured — skipping`);
     await safeLog({ record_count: 0, status: "skipped", error_message: "SMTP settings not configured", date_from: fromDt, date_to: toDt, action, recipients: recipients.join(", ") }, companyId);
     return { skipped: true, reason: "SMTP settings not configured" };
   }
 
   const rows = await getReportData({ fromDt, toDt, status, zoneId });
-  logger.info(`[report-email] ${rows.length} records found`);
+  emailLogger.info(`Records found: ${rows.length}`);
 
-  // If a specific zone was requested, send as single email (not zone-split)
-  // Otherwise split by zone
   if (zoneId) {
     const zoneName = rows[0]?.zone_name || `Zone ${zoneId}`;
     const { fromLabel: zFrom, toLabel: zTo } = dateLabel(rows);
@@ -328,5 +359,4 @@ async function sendReportEmail({ fromDt, toDt, status = "all", zoneId = null, fr
   return sendAllZones({ rows, smtp, recipients, companyId, action });
 }
 
-// ── Exports ────────────────────────────────────────────────────────────────
 module.exports = { sendEmailReport, sendReportEmail };
