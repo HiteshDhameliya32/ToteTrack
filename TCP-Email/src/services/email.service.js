@@ -10,8 +10,8 @@ const os                                                       = require("os");
 
 // Configuration
 const MAX_RETRIES     = 3;
-const RETRY_WAIT_MS   = 10_000; // 10 seconds between retries
-const ZONE_GAP_MS     = 5_000;  // 5 seconds between zone emails
+const RETRY_WAIT_MS   = 30_000; // 30 seconds between retries — gives network time to recover
+const ZONE_GAP_MS     = 30_000; // 30 seconds between zone emails — gives network time to recover
 const IMAGE_THRESHOLD = 1500;   // above this, skip NR images per zone
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -243,15 +243,17 @@ async function sendAllZones({ rows, smtp, recipients, companyId, action }) {
 
     if (result.success) {
       totalSent += result.count;
+      // Only proceed to next zone after this one succeeds
+      if (i < zoneNames.length - 1) {
+        logger.info(`[email-service] ${zoneName} done. Waiting ${ZONE_GAP_MS / 1000}s before Zone ${i + 2}/${totalZones}...`);
+        await delay(ZONE_GAP_MS);
+      }
     } else {
       failedZones++;
-      logger.warn(`[email-service] Zone ${zoneName} failed — continuing with remaining zones`);
-    }
-
-    // Gap between zones — avoids rapid-fire SMTP connections
-    if (i < zoneNames.length - 1) {
-      logger.info(`[email-service] Waiting ${ZONE_GAP_MS / 1000}s before next zone...`);
-      await delay(ZONE_GAP_MS);
+      // Stop — do not attempt remaining zones if one fails
+      // They will be picked up on the next scheduler run (still email_sent=0)
+      logger.warn(`[email-service] ${zoneName} failed after all retries — stopping. Remaining zones will be sent on next scheduler run.`);
+      break;
     }
   }
 
