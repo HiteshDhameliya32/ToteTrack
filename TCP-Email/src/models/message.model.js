@@ -278,7 +278,7 @@ async function markCyclesSent(ids) {
 }
 
 // ── Report Data (date-range, all matching rows, with folder paths) ─────────
-async function getReportData({ fromDt, toDt, status = "all", zoneId = null, emailSent = "all" }) {
+async function getReportData({ fromDt, toDt, status = "all", zoneId = null, emailSent = "all", barcode = "" }) {
   const where  = [];
   const params = [];
 
@@ -290,9 +290,15 @@ async function getReportData({ fromDt, toDt, status = "all", zoneId = null, emai
 
   if (zoneId) { where.push("zc.zone_id = ?"); params.push(Number(zoneId)); }
 
-  // Email sent filter
   if (emailSent === "sent")    where.push("zc.email_sent = 1");
   if (emailSent === "pending") where.push("zc.email_sent = 0");
+
+  // Barcode starts-with search — matches any pipe-separated segment
+  if (barcode && barcode.trim()) {
+    const b = barcode.trim();
+    where.push("(zc.barcode LIKE ? OR zc.barcode LIKE ?)");
+    params.push(`${b}%`, `%|${b}%`);
+  }
 
   const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
@@ -309,7 +315,7 @@ async function getReportData({ fromDt, toDt, status = "all", zoneId = null, emai
      LEFT JOIN tcp_zones tz ON tz.id = zc.zone_id
      ${whereClause}
      GROUP BY zc.id
-     ORDER BY zc.started_at ASC, zc.id ASC`,
+     ORDER BY zc.started_at DESC, zc.id DESC`,
     params
   );
 

@@ -66,7 +66,7 @@ const download = async (req, res, next) => {
  */
 const preview = async (req, res, next) => {
   try {
-    const { from, to, status = "all", zoneId = null, emailSent = "all" } = req.query;
+    const { from, to, status = "all", zoneId = null, emailSent = "all", barcode = "" } = req.query;
 
     if (!from || !to) {
       return res.status(400).json({ success: false, message: "from and to query params are required" });
@@ -75,7 +75,7 @@ const preview = async (req, res, next) => {
     const fromDt = from.replace("T", " ") + ":00";
     const toDt   = to.replace("T", " ")   + ":59";
 
-    const rows = await getReportData({ fromDt, toDt, status, zoneId, emailSent });
+    const rows = await getReportData({ fromDt, toDt, status, zoneId, emailSent, barcode });
 
     const total   = rows.length;
     const pass    = rows.filter(r => r.status === "PASS").length;
