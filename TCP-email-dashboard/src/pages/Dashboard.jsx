@@ -49,33 +49,35 @@ export default function Dashboard() {
   const zonePassRate = useQuery({ queryKey: ["chart-zone-pass-rate"],  queryFn: getChartZonePassRate,    refetchInterval: REFETCH });
   const zoneTrend    = useQuery({ queryKey: ["chart-zone-daily-trend"],queryFn: getChartZoneDailyTrend, refetchInterval: REFETCH });
 
-  const s        = stats.data;
-  const passRate = s?.passRate ?? 0;
+  const s           = stats.data;
+  const passRate    = s?.passRate ?? 0;
+  const windowLabel = s?.windowLabel ?? "07:00";  // "07:00" or "19:00"
+  const sinceLabel  = `Since ${windowLabel}`;
 
   const STAT_CARDS = [
     {
       key: "total",    label: "Total Totes",  value: s?.total,
-      sub: `Today: ${s?.today ?? 0}`,
+      sub: `${sinceLabel}: ${s?.today ?? 0}`,
       icon: Package,      bg: "bg-blue-50",    ic: "text-blue-600",    vc: "text-blue-700",    border: "border-blue-100",
     },
     {
       key: "pass",     label: "Totes Passed", value: s?.pass,
-      sub: `Today: ${s?.passToday ?? 0}`,
+      sub: `${sinceLabel}: ${s?.passToday ?? 0}`,
       icon: CheckCircle2, bg: "bg-emerald-50", ic: "text-emerald-600", vc: "text-emerald-700", border: "border-emerald-100",
     },
     {
       key: "nr",       label: "No Read (NR)", value: s?.nr,
-      sub: `Today: ${s?.nrToday ?? 0}`,
+      sub: `${sinceLabel}: ${s?.nrToday ?? 0}`,
       icon: XCircle,      bg: "bg-red-50",     ic: "text-red-500",     vc: "text-red-600",     border: "border-red-100",
     },
     {
       key: "passRate", label: "Pass Rate",    value: `${passRate}%`,
-      sub: "All time",
+      sub: sinceLabel,
       icon: TrendingUp,   bg: "bg-violet-50",  ic: "text-violet-600",  vc: "text-violet-700",  border: "border-violet-100",
     },
     {
       key: "today",    label: "Scans Today",  value: s?.today,
-      sub: null,
+      sub: sinceLabel,
       icon: Calendar,     bg: "bg-amber-50",   ic: "text-amber-600",   vc: "text-amber-700",   border: "border-amber-100",
     },
     {
@@ -114,12 +116,14 @@ export default function Dashboard() {
             data={msgTrend.data}
             isLoading={msgTrend.isLoading}
             isError={msgTrend.isError}
+            subtitle={`Since ${windowLabel}`}
           />
         </div>
         <CycleStatusChart
           data={cycleStat.data}
           isLoading={cycleStat.isLoading}
           isError={cycleStat.isError}
+          subtitle={`Since ${windowLabel}`}
         />
       </div>
 
@@ -134,6 +138,7 @@ export default function Dashboard() {
           data={zones.data}
           isLoading={zones.isLoading}
           isError={zones.isError}
+          subtitle={`Since ${windowLabel}`}
         />
       </div>
 

@@ -29,12 +29,12 @@ const renderLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) =>
   );
 };
 
-export default function CycleStatusChart({ data, isLoading, isError }) {
+export default function CycleStatusChart({ data, isLoading, isError, subtitle }) {
   const filled = (data ?? []).map(d => ({ ...d, fill: COLORS[d.name] ?? "#94a3b8" }));
   const total  = filled.reduce((s, d) => s + d.value, 0);
 
   return (
-    <ChartCard title="PASS / NR Distribution" subtitle="All time cycle results" isLoading={isLoading} isError={isError} height={220}>
+    <ChartCard title="PASS / NR Distribution" subtitle={subtitle ?? "All time cycle results"} isLoading={isLoading} isError={isError} height={220}>
       <ResponsiveContainer width="100%" height={220}>
         <PieChart>
           <Pie data={filled} dataKey="value" nameKey="name"

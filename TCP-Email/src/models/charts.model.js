@@ -3,35 +3,81 @@ const db = require("../config/db");
 // All queries read from zone_cycles (PASS/NR) joined with tcp_zones for names.
 // zone_cycles has no company_id — all data is shared (single-tenant device data).
 
-/* ─── Stats cards ─────────────────────────────────────── */
+/**
+ * Returns the start of the current 7-to-7 window as an IST datetime string.
+ *
+ * Rules (IST):
+ *   07:00 ≤ now < 19:00  →  window starts at today 07:00 IST
+ *   19:00 ≤ now < 07:00  →  window starts at today (or yesterday) 19:00 IST
+ *
+ * Also returns a human-readable label like "07:00" or "19:00".
+ */
+function getWindowStart() {
+  const now = new Date();
+
+  // Current IST hour (UTC+5:30)
+  const istOffset = 5 * 60 + 30; // minutes
+  const istMs     = now.getTime() + istOffset * 60 * 1000;
+  const istDate   = new Date(istMs);
+
+  const h    = istDate.getUTCHours();
+  const yyyy = istDate.getUTCFullYear();
+  const mm   = String(istDate.getUTCMonth() + 1).padStart(2, "0");
+  const dd   = String(istDate.getUTCDate()).padStart(2, "0");
+
+  let windowStart, label;
+
+  if (h >= 7 && h < 19) {
+    // Day window: today 07:00 IST
+    windowStart = `${yyyy}-${mm}-${dd} 07:00:00`;
+    label       = "07:00";
+  } else if (h >= 19) {
+    // Night window started today at 19:00 IST
+    windowStart = `${yyyy}-${mm}-${dd} 19:00:00`;
+    label       = "19:00";
+  } else {
+    // h < 7: night window started yesterday at 19:00 IST
+    const yesterday = new Date(istMs - 24 * 60 * 60 * 1000);
+    const yy  = yesterday.getUTCFullYear();
+    const ym  = String(yesterday.getUTCMonth() + 1).padStart(2, "0");
+    const yd  = String(yesterday.getUTCDate()).padStart(2, "0");
+    windowStart = `${yy}-${ym}-${yd} 19:00:00`;
+    label       = "19:00";
+  }
+
+  return { windowStart, label };
+}
+
+/* ─── Stats cards — scoped to current 7-to-7 window ──── */
 async function getEnhancedStats() {
-  // Total / PASS / NR / today cycles
+  const { windowStart, label } = getWindowStart();
+
   const [[base]] = await db.execute(`
     SELECT
-      COUNT(*)                                                                  AS total,
-      SUM(CASE WHEN status = 'PASS' THEN 1 ELSE 0 END)                        AS pass,
-      SUM(CASE WHEN status = 'NR'   THEN 1 ELSE 0 END)                        AS nr,
+      COUNT(*)                                                 AS total,
+      SUM(CASE WHEN status = 'PASS' THEN 1 ELSE 0 END)        AS pass,
+      SUM(CASE WHEN status = 'NR'   THEN 1 ELSE 0 END)        AS nr,
       SUM(CASE WHEN date(started_at) = date('now','+5 hours','+30 minutes')
-               THEN 1 ELSE 0 END)                                              AS today,
+               THEN 1 ELSE 0 END)                             AS today,
       SUM(CASE WHEN status = 'PASS'
                AND date(started_at) = date('now','+5 hours','+30 minutes')
-               THEN 1 ELSE 0 END)                                              AS pass_today,
+               THEN 1 ELSE 0 END)                             AS pass_today,
       SUM(CASE WHEN status = 'NR'
                AND date(started_at) = date('now','+5 hours','+30 minutes')
-               THEN 1 ELSE 0 END)                                              AS nr_today
+               THEN 1 ELSE 0 END)                             AS nr_today
     FROM zone_cycles
     WHERE status IS NOT NULL
-  `);
+      AND started_at >= ?
+  `, [windowStart]);
 
-  // Active email schedules
   const [[scheds]] = await db.execute(
     `SELECT COUNT(*) AS count FROM email_schedules WHERE active = 1`
   );
 
-  const total     = Number(base.total      ?? 0);
-  const pass      = Number(base.pass       ?? 0);
-  const nr        = Number(base.nr         ?? 0);
-  const passRate  = total > 0 ? Math.round((pass / total) * 100) : 0;
+  const total    = Number(base.total      ?? 0);
+  const pass     = Number(base.pass       ?? 0);
+  const nr       = Number(base.nr         ?? 0);
+  const passRate = total > 0 ? Math.round((pass / total) * 100) : 0;
 
   return {
     total,
@@ -42,24 +88,28 @@ async function getEnhancedStats() {
     nrToday:         Number(base.nr_today   ?? 0),
     passRate,
     activeSchedules: Number(scheds.count    ?? 0),
+    windowLabel:     label,   // "07:00" or "19:00"
+    windowStart,
   };
 }
 
-/* ─── Hourly trend — last 24 h (PASS + NR lines) ─────── */
+/* ─── Scan Activity — current 7-to-7 window ──────────── */
 async function getMessagesTrend() {
+  const { windowStart } = getWindowStart();
+
   const [rows] = await db.execute(`
     SELECT
-      strftime('%H:00', started_at)                   AS hour,
-      CAST(strftime('%H', started_at) AS INTEGER)     AS hour_num,
-      SUM(CASE WHEN status = 'PASS' THEN 1 ELSE 0 END) AS pass,
-      SUM(CASE WHEN status = 'NR'   THEN 1 ELSE 0 END) AS nr,
-      COUNT(*)                                         AS total
+      strftime('%H:00', started_at)                     AS hour,
+      CAST(strftime('%H', started_at) AS INTEGER)       AS hour_num,
+      SUM(CASE WHEN status = 'PASS' THEN 1 ELSE 0 END)  AS pass,
+      SUM(CASE WHEN status = 'NR'   THEN 1 ELSE 0 END)  AS nr,
+      COUNT(*)                                           AS total
     FROM zone_cycles
     WHERE status IS NOT NULL
-      AND started_at >= datetime('now', '+5 hours', '+30 minutes', '-24 hours')
+      AND started_at >= ?
     GROUP BY strftime('%H', started_at)
     ORDER BY hour_num ASC
-  `);
+  `, [windowStart]);
 
   return rows.map(r => ({
     hour:  r.hour,
@@ -69,15 +119,18 @@ async function getMessagesTrend() {
   }));
 }
 
-/* ─── PASS / NR pie ───────────────────────────────────── */
+/* ─── PASS / NR Distribution — current 7-to-7 window ─── */
 async function getEmailStatusDistribution() {
+  const { windowStart } = getWindowStart();
+
   const [[r]] = await db.execute(`
     SELECT
       SUM(CASE WHEN status = 'PASS' THEN 1 ELSE 0 END) AS pass,
       SUM(CASE WHEN status = 'NR'   THEN 1 ELSE 0 END) AS nr
     FROM zone_cycles
     WHERE status IS NOT NULL
-  `);
+      AND started_at >= ?
+  `, [windowStart]);
 
   return [
     { name: "PASS", value: Number(r.pass ?? 0) },
@@ -172,21 +225,24 @@ async function getBusyHours() {
   }));
 }
 
-/* ─── Zone breakdown — PASS/NR per zone ──────────────── */
+/* ─── Zone-wise Performance — current 7-to-7 window ──── */
 async function getZoneBreakdown() {
+  const { windowStart } = getWindowStart();
+
   const [rows] = await db.execute(`
     SELECT
       zc.zone_id,
       COALESCE(zc.zone_name, tz.name, 'Zone ' || zc.zone_id) AS zone_name,
-      COUNT(*)                                   AS total,
-      SUM(CASE WHEN zc.status = 'PASS' THEN 1 ELSE 0 END) AS pass,
-      SUM(CASE WHEN zc.status = 'NR'   THEN 1 ELSE 0 END) AS nr
+      COUNT(*)                                                  AS total,
+      SUM(CASE WHEN zc.status = 'PASS' THEN 1 ELSE 0 END)      AS pass,
+      SUM(CASE WHEN zc.status = 'NR'   THEN 1 ELSE 0 END)      AS nr
     FROM zone_cycles zc
     LEFT JOIN tcp_zones tz ON tz.id = zc.zone_id
     WHERE zc.status IS NOT NULL
+      AND zc.started_at >= ?
     GROUP BY zc.zone_id
     ORDER BY total DESC
-  `);
+  `, [windowStart]);
 
   return rows.map(r => ({
     zone_id:   r.zone_id,

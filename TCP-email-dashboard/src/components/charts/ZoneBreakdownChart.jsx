@@ -16,12 +16,12 @@ const Tip = ({ active, payload, label }) => {
   );
 };
 
-export default function ZoneBreakdownChart({ data, isLoading, isError }) {
+export default function ZoneBreakdownChart({ data, isLoading, isError, subtitle }) {
   // Use zone_name as the X-axis label
   const chartData = (data ?? []).map(d => ({ ...d, name: d.zone_name }));
 
   return (
-    <ChartCard title="Zone-wise Performance" subtitle="PASS vs NR per location" isLoading={isLoading} isError={isError} height={220}>
+    <ChartCard title="Zone-wise Performance" subtitle={subtitle ?? "PASS vs NR per location"} isLoading={isLoading} isError={isError} height={220}>
       {!chartData.length && !isLoading ? (
         <div className="flex items-center justify-center h-48 text-xs text-slate-400">
           No zone data yet — cycles will appear here once scanning starts.

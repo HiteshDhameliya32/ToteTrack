@@ -26,6 +26,35 @@ function localNow(offsetMinutes = 0) {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** Returns the current 7-to-7 window start as a datetime-local string (YYYY-MM-DDTHH:mm) */
+function windowFrom() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+
+  // Current IST time
+  const istMs   = now.getTime() + (5 * 60 + 30) * 60 * 1000;
+  const istDate = new Date(istMs);
+  const h       = istDate.getUTCHours();
+  const yyyy    = istDate.getUTCFullYear();
+  const mm      = pad(istDate.getUTCMonth() + 1);
+  const dd      = pad(istDate.getUTCDate());
+
+  if (h >= 7 && h < 19) {
+    // Day window: today 07:00
+    return `${yyyy}-${mm}-${dd}T07:00`;
+  } else if (h >= 19) {
+    // Night window: today 19:00
+    return `${yyyy}-${mm}-${dd}T19:00`;
+  } else {
+    // h < 7: night window started yesterday 19:00
+    const yest = new Date(istMs - 24 * 60 * 60 * 1000);
+    const yy   = yest.getUTCFullYear();
+    const ym   = pad(yest.getUTCMonth() + 1);
+    const yd   = pad(yest.getUTCDate());
+    return `${yy}-${ym}-${yd}T19:00`;
+  }
+}
+
 const STATUS_OPTIONS = [
   { value: "all",  label: "All Status" },
   { value: "PASS", label: "PASS Only"  },
@@ -68,39 +97,17 @@ function StatCard({ icon: Icon, label, value, color }) {
 
 /* ─── Image cell ──────────────────────────────────────── */
 function ImageCell({ imageName, folderPath, label }) {
-  const [exists,   setExists]   = useState(null); // null=loading, true, false
   const [showModal, setShowModal] = useState(false);
+  const [imgError,  setImgError]  = useState(false);
 
-  useEffect(() => {
-    if (!imageName || !folderPath) { setExists(false); return; }
-    const url = `/api/tcp-image-check?file=${encodeURIComponent(imageName)}&folder=${encodeURIComponent(folderPath)}`;
-    fetch(url)
-      .then(r => r.json())
-      .then(d => setExists(d.exists))
-      .catch(() => setExists(false));
-  }, [imageName, folderPath]);
-
-  if (!imageName) return <span className="text-slate-300 text-xs">—</span>;
-
-  if (exists === null) {
-    return <div className="w-7 h-7 rounded-full bg-slate-200 animate-pulse" />;
-  }
-
-  if (!exists) {
-    return (
-      <div title={`${imageName} — not found`} className="flex items-center gap-1 text-xs text-slate-400">
-        <ImageOff size={15} className="text-slate-300" />
-        <span className="hidden sm:inline text-[10px]">Not found</span>
-      </div>
-    );
-  }
+  if (!imageName || !folderPath) return <span className="text-slate-300 text-xs">—</span>;
 
   const src = `/api/tcp-image?file=${encodeURIComponent(imageName)}&folder=${encodeURIComponent(folderPath)}`;
 
   return (
     <>
       <button
-        onClick={() => setShowModal(true)}
+        onClick={() => { setImgError(false); setShowModal(true); }}
         className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 transition-colors"
         title={`View ${label} image`}
       >
@@ -120,11 +127,21 @@ function ImageCell({ imageName, folderPath, label }) {
               <X size={16} /> Close
             </button>
             <p className="text-white/60 text-xs mb-2">{imageName}</p>
-            <img
-              src={src}
-              alt={imageName}
-              className="max-w-full max-h-[82vh] rounded-lg shadow-2xl object-contain"
-            />
+
+            {imgError ? (
+              <div className="flex flex-col items-center justify-center gap-3 bg-slate-800 rounded-lg p-12 text-slate-400">
+                <ImageOff size={48} className="text-slate-600" />
+                <p className="text-sm">Image not found</p>
+                <p className="text-xs text-slate-500">{imageName}</p>
+              </div>
+            ) : (
+              <img
+                src={src}
+                alt={imageName}
+                onError={() => setImgError(true)}
+                className="max-w-full max-h-[82vh] rounded-lg shadow-2xl object-contain"
+              />
+            )}
           </div>
         </div>
       )}
@@ -134,18 +151,33 @@ function ImageCell({ imageName, folderPath, label }) {
 
 /* ─── Main page ───────────────────────────────────────── */
 export default function Reports() {
-  const [from,      setFrom]      = useState(() => localNow(-24 * 60));
+  const [from,      setFrom]      = useState(() => windowFrom());
   const [to,        setTo]        = useState(() => localNow());
   const [status,    setStatus]    = useState("all");
   const [zoneId,    setZoneId]    = useState("");
   const [emailSent, setEmailSent] = useState("all");
   const [barcode,   setBarcode]   = useState("");
+  const [barcodeInput, setBarcodeInput] = useState("");
   const [page,      setPage]      = useState(1);
 
   const [committed, setCommitted] = useState({
-    from: localNow(-24 * 60), to: localNow(),
+    from: windowFrom(), to: localNow(),
     status: "all", zoneId: "", emailSent: "all", barcode: "",
   });
+
+  // Debounce barcode input — auto-searches 600ms after typing stops
+  useEffect(() => {
+    const t = setTimeout(() => setBarcode(barcodeInput), 600);
+    return () => clearTimeout(t);
+  }, [barcodeInput]);
+
+  // When barcode changes, re-commit filters automatically
+  useEffect(() => {
+    if (committed.from && committed.to) {
+      setPage(1);
+      setCommitted(prev => ({ ...prev, barcode }));
+    }
+  }, [barcode]);
 
   const [downloading, setDownloading] = useState(false);
   const [dlError,     setDlError]     = useState(null);
@@ -191,7 +223,7 @@ export default function Reports() {
   const applyFilter = () => {
     if (!from || !to) return;
     setPage(1);
-    setCommitted({ from, to, status, zoneId, emailSent, barcode });
+    setCommitted({ from, to, status, zoneId, emailSent, barcode: barcodeInput });
   };
 
   const handleDownload = async () => {
@@ -274,14 +306,14 @@ export default function Reports() {
             <div className="relative">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
-                value={barcode}
-                onChange={e => setBarcode(e.target.value)}
+                value={barcodeInput}
+                onChange={e => setBarcodeInput(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && applyFilter()}
                 placeholder="e.g. ABC123"
                 className={inputClass + " pl-8 w-40"}
               />
-              {barcode && (
-                <button onClick={() => setBarcode("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+              {barcodeInput && (
+                <button onClick={() => { setBarcodeInput(""); setBarcode(""); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                   <X size={12} />
                 </button>
               )}
@@ -372,8 +404,7 @@ export default function Reports() {
                     <th className="px-4 py-3 font-semibold w-16">Status</th>
                     <th className="px-4 py-3 font-semibold">Barcode(s)</th>
                     <th className="px-4 py-3 font-semibold w-24">OK Image</th>
-                    <th className="px-4 py-3 font-semibold w-24">NR Image</th>
-                    <th className="px-4 py-3 font-semibold w-24">Email</th>
+                    <th className="px-4 py-3 font-semibold w-24">NR Image</th>                    <th className="px-4 py-3 font-semibold w-24">Email</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -401,18 +432,18 @@ export default function Reports() {
                           : <span className="text-slate-400 text-xs">—</span>
                         }
                       </td>
-                      {/* OK Image */}
+                      {/* OK Image — always shown, lives in folder_path_ok */}
                       <td className="px-4 py-2.5">
                         <ImageCell
-                          imageName={r.status === "PASS" ? r.image_name : null}
+                          imageName={r.image_name}
                           folderPath={r.folder_path_ok}
                           label="OK"
                         />
                       </td>
-                      {/* NR Image */}
+                      {/* NR Image — always shown, lives in folder_path_nr */}
                       <td className="px-4 py-2.5">
                         <ImageCell
-                          imageName={r.status === "NR" ? r.image_name : null}
+                          imageName={r.image_name}
                           folderPath={r.folder_path_nr}
                           label="NR"
                         />

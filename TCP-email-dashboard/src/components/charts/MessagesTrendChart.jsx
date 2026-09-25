@@ -12,9 +12,9 @@ const Tip = ({ active, payload, label }) => {
   );
 };
 
-export default function MessagesTrendChart({ data, isLoading, isError }) {
+export default function MessagesTrendChart({ data, isLoading, isError, subtitle }) {
   return (
-    <ChartCard title="Scan Activity — Last 24 Hours" subtitle="Tote cycles by hour" isLoading={isLoading} isError={isError} height={220}>
+    <ChartCard title="Scan Activity" subtitle={subtitle ?? "Tote cycles by hour"} isLoading={isLoading} isError={isError} height={220}>
       <ResponsiveContainer width="100%" height={220}>
         <AreaChart data={data ?? []} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
           <defs>
