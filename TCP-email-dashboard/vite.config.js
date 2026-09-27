@@ -66,14 +66,14 @@ export default defineConfig({
       "/api/tcp-image": {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,
-        timeout: 10000,
-        proxyTimeout: 10000,
+        timeout: 60000,
+        proxyTimeout: 60000,
       },
       "/api/tcp-image-check": {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,
-        timeout: 10000,
-        proxyTimeout: 10000,
+        timeout: 60000,
+        proxyTimeout: 60000,
       },
       "/api": {
         target: `http://localhost:${emailPort}`,
@@ -127,14 +127,14 @@ export default defineConfig({
       "/api/tcp-image": {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,
-        timeout: 10000,
-        proxyTimeout: 10000,
+        timeout: 60000,
+        proxyTimeout: 60000,
       },
       "/api/tcp-image-check": {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,
-        timeout: 10000,
-        proxyTimeout: 10000,
+        timeout: 60000,
+        proxyTimeout: 60000,
       },
       "/api": {
         target: `http://localhost:${emailPort}`,

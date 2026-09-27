@@ -324,7 +324,6 @@ function connectOne(userId, host, port) {
     const cur = connections.get(key);
     if (cur) connections.set(key, { ...cur, connected: false });
     logger.info(`[${userLabel}][${host}:${port}] closed — retrying in ${RECONNECT_DELAY}ms`);
-    console.log(`❌ [${userLabel}][${port}] disconnected`);
     socket.removeAllListeners();
     socket.destroy();
 

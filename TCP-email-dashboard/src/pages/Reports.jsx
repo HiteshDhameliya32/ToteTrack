@@ -99,15 +99,22 @@ function StatCard({ icon: Icon, label, value, color }) {
 function ImageCell({ imageName, folderPath, label }) {
   const [showModal, setShowModal] = useState(false);
   const [imgError,  setImgError]  = useState(false);
+  const [imgLoading, setImgLoading] = useState(true);
 
   if (!imageName || !folderPath) return <span className="text-slate-300 text-xs">—</span>;
 
   const src = `/api/tcp-image?file=${encodeURIComponent(imageName)}&folder=${encodeURIComponent(folderPath)}`;
 
+  const openModal = () => {
+    setImgError(false);
+    setImgLoading(true);
+    setShowModal(true);
+  };
+
   return (
     <>
       <button
-        onClick={() => { setImgError(false); setShowModal(true); }}
+        onClick={openModal}
         className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 transition-colors"
         title={`View ${label} image`}
       >
@@ -120,28 +127,50 @@ function ImageCell({ imageName, folderPath, label }) {
           onClick={() => setShowModal(false)}
         >
           <div className="relative max-w-4xl max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            {/* Close button */}
             <button
               onClick={() => setShowModal(false)}
               className="absolute -top-9 right-0 flex items-center gap-1 text-white/80 hover:text-white text-sm"
             >
               <X size={16} /> Close
             </button>
+
             <p className="text-white/60 text-xs mb-2">{imageName}</p>
 
-            {imgError ? (
-              <div className="flex flex-col items-center justify-center gap-3 bg-slate-800 rounded-lg p-12 text-slate-400">
-                <ImageOff size={48} className="text-slate-600" />
-                <p className="text-sm">Image not found</p>
-                <p className="text-xs text-slate-500">{imageName}</p>
+            {/* Loading spinner */}
+            {imgLoading && !imgError && (
+              <div className="flex flex-col items-center justify-center gap-3 bg-slate-800 rounded-lg p-16 min-w-64">
+                <div className="h-10 w-10 rounded-full border-4 border-slate-600 border-t-blue-400 animate-spin" />
+                <p className="text-slate-400 text-sm">Loading image…</p>
               </div>
-            ) : (
-              <img
-                src={src}
-                alt={imageName}
-                onError={() => setImgError(true)}
-                className="max-w-full max-h-[82vh] rounded-lg shadow-2xl object-contain"
-              />
             )}
+
+            {/* Error state with retry */}
+            {imgError && (
+              <div className="flex flex-col items-center justify-center gap-3 bg-slate-800 rounded-lg p-12 text-slate-400 min-w-64">
+                <ImageOff size={48} className="text-slate-600" />
+                <p className="text-sm">Image could not be loaded</p>
+                <p className="text-xs text-slate-500 break-all max-w-xs text-center">{imageName}</p>
+                <button
+                  onClick={() => { setImgError(false); setImgLoading(true); }}
+                  className="mt-2 px-4 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 text-white text-xs font-medium transition-colors"
+                >
+                  ↻ Retry
+                </button>
+              </div>
+            )}
+
+            {/* Actual image — hidden while loading, shown once loaded */}
+            <img
+              key={imgError ? "retry" : "load"}  /* key change forces re-fetch on retry */
+              src={src}
+              alt={imageName}
+              onLoad={() => setImgLoading(false)}
+              onError={() => { setImgLoading(false); setImgError(true); }}
+              className={`max-w-full max-h-[82vh] rounded-lg shadow-2xl object-contain ${
+                imgLoading || imgError ? "hidden" : "block"
+              }`}
+            />
           </div>
         </div>
       )}

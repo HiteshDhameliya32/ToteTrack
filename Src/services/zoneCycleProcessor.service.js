@@ -129,6 +129,31 @@ async function getZoneName(zoneId) {
 }
 
 /**
+ * Query folder paths for all devices in a zone.
+ * Returns a map: { "host:port": { folder_ok, folder_nr } }
+ */
+async function getDeviceFolders(zoneId) {
+  try {
+    const [rows] = await db.execute(
+      `SELECT host, port, folder_path_ok, folder_path_nr
+       FROM user_tcp_configs
+       WHERE zone_id = ? AND is_active = 1`,
+      [zoneId]
+    );
+    const map = {};
+    for (const r of rows) {
+      map[deviceKey(r.host, r.port)] = {
+        folder_ok: r.folder_path_ok || null,
+        folder_nr: r.folder_path_nr || null,
+      };
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Query all devices (host:port pairs) assigned to a specific zone
  * Returns array of device keys like ["192.168.1.10:5001", "192.168.1.10:5002"]
  */
@@ -172,54 +197,77 @@ function allDevicesReceived(cycle) {
 
 /**
  * Determine PASS/NR status by checking all collected records for valid barcodes
- * Returns: { status: "PASS" | "NR", barcodes: string (pipe-separated), imageName: string }
+ * Returns: { status, barcodes, imageName, imagesArray }
+ * imagesArray = [{ image, device, type }]  — type is "OK" if that device had a valid barcode, else "NR"
  */
 function determineCycleStatus(cycle) {
   const allBarcodes = [];
-  
-  // Collect ALL valid barcodes from all records (including duplicates)
+
+  // Collect ALL valid barcodes from all records
   for (const record of cycle.collectedRecords) {
     if (isValidBarcode(record.barcode)) {
       allBarcodes.push(record.barcode);
     }
   }
-  
-  // Get image name from first record
+
+  // Get image name from first record (kept for backward compat)
   const firstImageName = cycle.collectedRecords[0]?.imageName || null;
-  
+
+  // Build per-device images array
+  // type = "OK" if that device sent a valid barcode, "NR" otherwise
+  const imagesArray = cycle.collectedRecords
+    .filter(r => r.imageName)  // only records that have an image
+    .map(r => ({
+      image:  r.imageName,
+      device: r.deviceId,
+      type:   isValidBarcode(r.barcode) ? "OK" : "NR",
+    }));
+
   if (allBarcodes.length > 0) {
-    // PASS - concatenate all barcodes with pipe separator
     const barcodesString = allBarcodes.join("|");
     logger.info(`[ZoneCycleProcessor] Zone ${cycle.zoneId} Cycle ${cycle.cycleId}: PASS with ${allBarcodes.length} barcode(s): "${barcodesString}"`);
-    return { status: "PASS", barcodes: barcodesString, imageName: firstImageName };
+    return { status: "PASS", barcodes: barcodesString, imageName: firstImageName, imagesArray };
   }
-  
-  // No valid barcode found in any record - NR
+
   logger.info(`[ZoneCycleProcessor] Zone ${cycle.zoneId} Cycle ${cycle.cycleId}: NR (no valid barcode in ${cycle.collectedRecords.length} record(s)), image: ${firstImageName}`);
-  return { status: "NR", barcodes: null, imageName: firstImageName };
+  return { status: "NR", barcodes: null, imageName: firstImageName, imagesArray };
 }
 
 /**
  * Persist the cycle result to the database
  */
 async function saveCycleResult(cycle, completionReason) {
-  const { status, barcodes, imageName } = determineCycleStatus(cycle);
+  const { status, barcodes, imageName, imagesArray } = determineCycleStatus(cycle);
   const completedAt = getKolkataTimeStr();
-  
-  // Calculate cycle duration in milliseconds
-  const startTime = new Date(cycle.startedAt).getTime();
-  const endTime = new Date(completedAt).getTime();
+
+  const startTime  = new Date(cycle.startedAt).getTime();
+  const endTime    = new Date(completedAt).getTime();
   const durationMs = endTime - startTime;
 
-  // Resolve zone name at write time so it survives zone renames/deletes
+  // Resolve zone name at write time
   const zoneName = await getZoneName(cycle.zoneId);
+
+  // Enrich each image entry with the correct folder path from user_tcp_configs
+  const deviceFolders = await getDeviceFolders(cycle.zoneId);
+  const enrichedImages = imagesArray.map(img => {
+    const folders = deviceFolders[img.device] || {};
+    return {
+      image:  img.image,
+      device: img.device,
+      type:   img.type,
+      folder: img.type === "OK"
+        ? (folders.folder_ok || null)
+        : (folders.folder_nr || null),
+    };
+  });
+  const imagesJson = enrichedImages.length > 0 ? JSON.stringify(enrichedImages) : null;
   
   try {
     await db.execute(
       `INSERT INTO zone_cycles 
-        (cycle_id, zone_id, zone_name, started_at, completed_at, status, barcode, image_name, first_record_id, 
+        (cycle_id, zone_id, zone_name, started_at, completed_at, status, barcode, image_name, images, first_record_id, 
          completion_reason, expected_devices, received_devices)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         cycle.cycleId,
         cycle.zoneId,
@@ -229,6 +277,7 @@ async function saveCycleResult(cycle, completionReason) {
         status,
         barcodes,
         imageName,
+        imagesJson,
         cycle.firstRecordId,
         completionReason,
         JSON.stringify([...cycle.expectedDeviceIds]),

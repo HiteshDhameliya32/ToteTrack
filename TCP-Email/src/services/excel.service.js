@@ -137,17 +137,52 @@ function resolveImagePath(row) {
 }
 
 async function buildReportZip(rows, { fromLabel = "", toLabel = "", includeImages = true } = {}) {
-  // Pre-resolve image paths for NR rows — only when includeImages is true
+  // Pre-resolve image paths — uses new images JSON array if available, falls back to old image_name
   rows.forEach(r => {
-    if (r.status === "NR" && includeImages) {
+    if (r.images && Array.isArray(r.images) && r.images.length > 0 && includeImages) {
+      // ── New path: per-camera images from JSON ─────────────────────────────
+      r.resolvedImages = r.images
+        .filter(img => img.image && img.folder)
+        .map(img => {
+          const imgPath = (() => {
+            try {
+              const folder = String(img.folder).trim().replace(/^["']|["']$/g, "");
+              if (!fs.existsSync(folder)) return null;
+              const identName = path.parse(img.image).name.toLowerCase();
+              const files     = fs.readdirSync(folder);
+              const match     = files.find(f =>
+                path.parse(f).name.toLowerCase() === identName ||
+                f.toLowerCase() === img.image.toLowerCase()
+              );
+              return match ? path.join(folder, match) : null;
+            } catch { return null; }
+          })();
+          return {
+            image:    img.image,
+            type:     img.type,
+            filePath: imgPath,
+            fileName: imgPath ? path.basename(imgPath) : null,
+            notFound: !imgPath,
+          };
+        });
+      const first = r.resolvedImages[0];
+      r.resolvedImageName = first?.fileName || null;
+      r.resolvedImagePath = first?.filePath || null;
+      r.imageNotFound     = r.resolvedImages.every(i => i.notFound);
+    } else if (includeImages) {
+      // ── Old path: single image_name + folder_path ─────────────────────────
       const imgPath = resolveImagePath(r);
       r.resolvedImageName = imgPath ? path.basename(imgPath) : null;
       r.resolvedImagePath = imgPath || null;
       r.imageNotFound     = !imgPath && !!r.image_name;
+      r.resolvedImages    = r.resolvedImageName
+        ? [{ image: r.image_name, type: r.status, filePath: r.resolvedImagePath, fileName: r.resolvedImageName, notFound: false }]
+        : [];
     } else {
       r.resolvedImageName = null;
       r.resolvedImagePath = null;
-      r.imageNotFound     = r.status === "NR" && !!r.image_name && !includeImages;
+      r.imageNotFound     = !!r.image_name;
+      r.resolvedImages    = [];
     }
   });
 

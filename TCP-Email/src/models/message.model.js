@@ -306,7 +306,7 @@ async function getReportData({ fromDt, toDt, status = "all", zoneId = null, emai
     `SELECT zc.id, zc.cycle_id, zc.zone_id,
             COALESCE(zc.zone_name, tz.name, 'Zone ' || zc.zone_id) AS zone_name,
             zc.started_at, zc.completed_at,
-            zc.status, zc.barcode, zc.image_name,
+            zc.status, zc.barcode, zc.image_name, zc.images,
             zc.completion_reason, zc.expected_devices, zc.received_devices,
             zc.email_sent, zc.email_sent_at,
             uc.folder_path_ok, uc.folder_path_nr
@@ -322,6 +322,7 @@ async function getReportData({ fromDt, toDt, status = "all", zoneId = null, emai
   return rows.map(r => ({
     ...r,
     folder_path: r.status === "PASS" ? r.folder_path_ok : r.folder_path_nr,
+    images: r.images ? (() => { try { return JSON.parse(r.images); } catch { return null; } })() : null,
   }));
 }
 
