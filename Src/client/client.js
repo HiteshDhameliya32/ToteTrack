@@ -216,10 +216,25 @@ function connectOne(userId, host, port) {
 
   socket.on("data", async (data) => {
     if (!isConnected) return;
-    const text = data.toString().trim();
-    if (!text) return;
+    const rawText = data.toString().trim();
+    if (!rawText) return;
+
+    // Normalize TCP message: remove duplicated index-0 suffix from intermediate segments
+    // e.g. "168|C060607929168|IWC428947978" -> "168|C060607929|IWC428947978"
+    const text = (() => {
+      const parts = rawText.split("|");
+      if (parts.length < 3) return rawText;
+      const header = parts[0];
+      const n = header.length;
+      const fixed = parts.map((seg, idx) => {
+        if (idx === 0 || idx === parts.length - 1) return seg;
+        if (seg.endsWith(header)) return seg.slice(0, -n);
+        return seg;
+      });
+      return fixed.join("|");
+    })();
+
     logger.info(`[${userLabel}][${host}:${port}] ${text}`);
-    logger.info(`ðŸ“© [${userLabel}][${port}]`, text);
 
     // â”€â”€ Store arrival IMMEDIATELY (before any await) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // This is the fix for the async race condition: both ports' messages

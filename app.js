@@ -133,8 +133,6 @@ const API_PORT = Number(process.env.API_PORT) || 4000;
 
 server.listen(API_PORT, async () => {
   logger.info(`API + Socket.IO server running on port ${API_PORT}`);
-  console.log(`🚀 TCP-Node API running on http://localhost:${API_PORT}`);
-
   await tcpService.startAll();
   await tcpClient.loadAll();
 });
