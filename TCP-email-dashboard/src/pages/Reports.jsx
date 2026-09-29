@@ -432,8 +432,8 @@ export default function Reports() {
                     <th className="px-4 py-3 font-semibold w-40">Scan Time</th>
                     <th className="px-4 py-3 font-semibold w-16">Status</th>
                     <th className="px-4 py-3 font-semibold">Barcode(s)</th>
-                    <th className="px-4 py-3 font-semibold w-24">OK Image</th>
-                    <th className="px-4 py-3 font-semibold w-24">NR Image</th>                    <th className="px-4 py-3 font-semibold w-24">Email</th>
+                    <th className="px-4 py-3 font-semibold w-24">Img 1</th>
+                    <th className="px-4 py-3 font-semibold w-24">Img 2</th>                    <th className="px-4 py-3 font-semibold w-24">Email</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -461,20 +461,20 @@ export default function Reports() {
                           : <span className="text-slate-400 text-xs">—</span>
                         }
                       </td>
-                      {/* OK Image — always shown, lives in folder_path_ok */}
+                      {/* Img 1 — first camera image */}
                       <td className="px-4 py-2.5">
                         <ImageCell
-                          imageName={r.image_name}
-                          folderPath={r.folder_path_ok}
-                          label="OK"
+                          imageName={r.images?.[0]?.image ?? (r.image_name ?? null)}
+                          folderPath={r.images?.[0]?.folder ?? r.folder_path_ok}
+                          label="Img 1"
                         />
                       </td>
-                      {/* NR Image — always shown, lives in folder_path_nr */}
+                      {/* Img 2 — second camera image */}
                       <td className="px-4 py-2.5">
                         <ImageCell
-                          imageName={r.image_name}
-                          folderPath={r.folder_path_nr}
-                          label="NR"
+                          imageName={r.images?.[1]?.image ?? null}
+                          folderPath={r.images?.[1]?.folder ?? r.folder_path_nr}
+                          label="Img 2"
                         />
                       </td>
                       <td className="px-4 py-2.5">

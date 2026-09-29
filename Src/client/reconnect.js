@@ -1,4 +1,4 @@
-const { RECONNECT_DELAY } = require("../config/env");
+﻿const { RECONNECT_DELAY } = require("../config/env");
 const logger = require("../services/logger");
 
 let reconnectTimer = null;
@@ -7,7 +7,7 @@ function reconnect(connectFn) {
   if (reconnectTimer) return;
 
   logger.info(`RECONNECT IN ${RECONNECT_DELAY}ms`);
-  console.log(`🔄 Retry after ${RECONNECT_DELAY}ms`);
+  logger.info(`ðŸ”„ Retry after ${RECONNECT_DELAY}ms`);
 
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SQLite schema initialisation using sql.js (pure JavaScript, no native build).
  *
  * All tables are created with CREATE TABLE IF NOT EXISTS.
@@ -8,12 +8,13 @@
 
 const db = require("../config/db");
 const { hashPassword } = require("../utils/password");
+const logger = require("../utils/logger");
 
 async function initSchema() {
   // Get the raw sql.js DB instance for bulk DDL
   const sqlDb = await db._getDb();
 
-  // ── Helper: add a column if it doesn't already exist ──────────────────────
+  // â”€â”€ Helper: add a column if it doesn't already exist â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function columnExists(tableName, columnName) {
     const result = sqlDb.exec(`PRAGMA table_info(${tableName})`);
     if (!result.length) return false;
@@ -24,14 +25,14 @@ async function initSchema() {
     try {
       if (!columnExists(tableName, columnName)) {
         sqlDb.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`);
-        console.log(`Column '${columnName}' added to table '${tableName}'`);
+        logger.info(`Column '${columnName}' added to table '${tableName}'`);
       }
     } catch (err) {
-      console.error(`Error adding column '${columnName}' to '${tableName}':`, err.message);
+      logger.error(`Error adding column '${columnName}' to '${tableName}':`, err.message);
     }
   }
 
-  // ── Create Tables ──────────────────────────────────────────────────────────
+  // â”€â”€ Create Tables â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   sqlDb.run(`
     CREATE TABLE IF NOT EXISTS companies (
@@ -236,7 +237,7 @@ async function initSchema() {
     )
   `);
 
-  // ── Safe column migrations ─────────────────────────────────────────────────
+  // â”€â”€ Safe column migrations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   addColumnIfNotExists("tcp_messages", "company_id", "INTEGER NOT NULL DEFAULT 1");
   addColumnIfNotExists("tcp_messages", "port", "INTEGER NULL");
   addColumnIfNotExists("tcp_messages", "image", "TEXT NULL");
@@ -259,10 +260,10 @@ async function initSchema() {
   addColumnIfNotExists("zone_cycles", "zone_name",   "TEXT NULL");
   addColumnIfNotExists("zone_cycles", "images",      "TEXT NULL");  // JSON array of per-camera image info
 
-  // ── Persist schema changes to disk ────────────────────────────────────────
+  // â”€â”€ Persist schema changes to disk â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   await db._persist();
 
-  // ── Seed default data ──────────────────────────────────────────────────────
+  // â”€â”€ Seed default data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   // Default company
   let defaultCompanyId;
@@ -271,7 +272,7 @@ async function initSchema() {
     await db.execute("INSERT INTO companies (name) VALUES (?)", ["Default Company"]);
     const [[newComp]] = await db.query("SELECT id FROM companies WHERE name = ? LIMIT 1", ["Default Company"]);
     defaultCompanyId = newComp?.id || 1;
-    console.log(`Default company seeded with ID: ${defaultCompanyId}`);
+    logger.info(`Default company seeded with ID: ${defaultCompanyId}`);
   } else {
     defaultCompanyId = companies[0].id;
   }
@@ -306,16 +307,16 @@ async function initSchema() {
     );
     const [[superUser]] = await db.query("SELECT id FROM users WHERE email = ? LIMIT 1", ["superadmin@tcp.com"]);
     const superUserId = superUser?.id;
-    console.log(`Default Super Admin seeded (superadmin@tcp.com / Password123) with ID: ${superUserId}`);
+    logger.info(`Default Super Admin seeded (superadmin@tcp.com / Password123) with ID: ${superUserId}`);
 
     const [allPerms] = await db.query("SELECT id FROM permissions");
     for (const p of allPerms) {
       await db.execute("INSERT OR IGNORE INTO user_permissions (user_id, permission_id) VALUES (?, ?)", [superUserId, p.id]);
     }
-    console.log("All permissions assigned to default Super Admin.");
+    logger.info("All permissions assigned to default Super Admin.");
   }
 
-  // ── Seed SMTP from .env if smtp_settings table is empty ───────────────────
+  // â”€â”€ Seed SMTP from .env if smtp_settings table is empty â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // This ensures the email service works out of the box without manual config.
   // Users can override via the Settings page.
   const [smtpRows] = await db.query("SELECT id FROM smtp_settings LIMIT 1");
@@ -331,11 +332,12 @@ async function initSchema() {
         "INSERT INTO smtp_settings (host, port, user, pass, from_name, company_id) VALUES (?, ?, ?, ?, ?, ?)",
         [smtpHost, smtpPort, smtpUser, smtpPass, fromName, defaultCompanyId]
       );
-      console.log(`SMTP settings seeded from .env (host=${smtpHost}, user=${smtpUser})`);
+      logger.info(`SMTP settings seeded from .env (host=${smtpHost}, user=${smtpUser})`);
     } else {
-      console.log("SMTP env vars not set — skipping SMTP seed. Configure via Settings page.");
+      logger.info("SMTP env vars not set â€” skipping SMTP seed. Configure via Settings page.");
     }
   }
 }
 
 module.exports = initSchema;
+

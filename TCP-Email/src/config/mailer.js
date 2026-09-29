@@ -8,13 +8,6 @@ async function createTransporter(companyId) {
     throw new Error("SMTP settings not configured. Please configure SMTP in settings.");
   }
 
-  console.log("================================");
-  console.log(`SMTP SETTINGS FOR COMPANY ${companyId}:`, smtp);
-  console.log("HOST:", smtp.host);
-  console.log("PORT:", smtp.port);
-  console.log("USER:", smtp.user);
-  console.log("================================");
-
   return nodemailer.createTransport({
     host: String(smtp.host).trim(),
     port: Number(smtp.port),

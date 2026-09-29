@@ -1,4 +1,4 @@
-const net = require("net");
+﻿const net = require("net");
 const Camera = require("../models/camera.model");
 const logger = require("../services/logger");
 
@@ -60,7 +60,7 @@ function startServer(camera) {
       state.lastActivity = getKolkataTimeStr();
       state.status = "connected";
 
-      console.log(`[${camera.camera_name}][${camera.port}] ${text}`);
+      logger.info(`[${camera.camera_name}][${camera.port}] ${text}`);
       logger.info(`[${camera.camera_name}][${camera.port}] ${text}`);
 
       try {
@@ -100,7 +100,7 @@ function startServer(camera) {
 
   server.listen(camera.port, () => {
     logger.info(`TCP listener started on port ${camera.port} for ${camera.camera_name}`);
-    console.log(`🟢 TCP listening on ${k} [${camera.camera_name}]`);
+    logger.info(`ðŸŸ¢ TCP listening on ${k} [${camera.camera_name}]`);
   });
 
   server.on("error", (err) => {
@@ -121,7 +121,7 @@ function stopServer(ip, port) {
   state.clients.forEach((s) => s.destroy());
   state.server.close(() => {
     logger.info(`TCP listener stopped on ${k}`);
-    console.log(`🔴 TCP stopped on ${k}`);
+    logger.info(`ðŸ”´ TCP stopped on ${k}`);
   });
   servers.delete(k);
 
@@ -180,3 +180,4 @@ function emitStatus(k, state) {
 }
 
 module.exports = { setIO, startAll, startServer, stopServer, restartServer, getStatuses };
+

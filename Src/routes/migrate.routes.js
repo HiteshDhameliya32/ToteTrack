@@ -106,8 +106,6 @@ async function handleMigrate(req, res) {
     });
   } catch (err) {
     const elapsed = Date.now() - started;
-    console.error("[migrate] Error:", err);
-
     return res.status(500).json({
       success:    false,
       message:    "Migration failed.",

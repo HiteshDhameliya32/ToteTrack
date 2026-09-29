@@ -269,12 +269,20 @@ async function getUnsentCycles(companyId) {
 
 // ── Mark Cycles as Sent ────────────────────────────────────────────────────
 async function markCyclesSent(ids) {
-  if (!ids.length) return;
-  const placeholders = ids.map(() => "?").join(",");
-  await db.execute(
-    `UPDATE zone_cycles SET email_sent = 1, email_sent_at = ? WHERE id IN (${placeholders})`,
-    [getKolkataTimeStr(), ...ids]
-  );
+  if (!ids || !ids.length) return;
+
+  // SQLite max bind variables = 999. Chunk to stay under the limit.
+  const CHUNK = 999;
+  const now   = getKolkataTimeStr();
+
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const batch       = ids.slice(i, i + CHUNK);
+    const placeholders = batch.map(() => "?").join(",");
+    await db.execute(
+      `UPDATE zone_cycles SET email_sent = 1, email_sent_at = ? WHERE id IN (${placeholders})`,
+      [now, ...batch]
+    );
+  }
 }
 
 // ── Report Data (date-range, all matching rows, with folder paths) ─────────
@@ -329,12 +337,21 @@ async function getReportData({ fromDt, toDt, status = "all", zoneId = null, emai
 // ── Delete Cycles by IDs ───────────────────────────────────────────────────
 async function deleteCyclesByIds(ids) {
   if (!ids || !ids.length) return 0;
-  const placeholders = ids.map(() => "?").join(",");
-  const [result] = await db.execute(
-    `DELETE FROM zone_cycles WHERE id IN (${placeholders})`,
-    ids
-  );
-  return result.affectedRows ?? 0;
+
+  const CHUNK = 999;
+  let total   = 0;
+
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const batch        = ids.slice(i, i + CHUNK);
+    const placeholders = batch.map(() => "?").join(",");
+    const [result]     = await db.execute(
+      `DELETE FROM zone_cycles WHERE id IN (${placeholders})`,
+      batch
+    );
+    total += result.affectedRows ?? 0;
+  }
+
+  return total;
 }
 
 // ── Delete Cycles by Filter (all matching) ─────────────────────────────────

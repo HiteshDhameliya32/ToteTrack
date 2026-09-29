@@ -1,4 +1,4 @@
-const net    = require("net");
+﻿const net    = require("net");
 const path   = require("path");
 const fs     = require("fs");
 const db     = require("../config/db");
@@ -11,13 +11,13 @@ const INITIAL_MESSAGE = process.env.INITIAL_MESSAGE || "";
 
 // key: "userId:host:port" -> { socket, timer }
 const connections    = new Map();
-// users who have explicitly logged out — suppress reconnect
+// users who have explicitly logged out â€” suppress reconnect
 const loggedOut      = new Set();
 
-// ── 30ms Matching Setup ─────────────────────────────────────────────────────
+// â”€â”€ 30ms Matching Setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // key: "userId:host:port" -> { text, port, timer, timestamp }
 const MATCHING_WINDOW  = Number(process.env.TCP_MATCHING_WINDOW || 30);
-// key: "userId:host:port" → { text, ts, timer }
+// key: "userId:host:port" â†’ { text, ts, timer }
 const rawMessages = new Map();
 
 function connKey(userId, host, port) {
@@ -90,7 +90,7 @@ async function findMatchingImage(folderPath, identifier) {
   }
 }
 
-// ── saveOne ──────────────────────────────────────────────────────────────────
+// â”€â”€ saveOne â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Look up config for one host:port, find a matching image, and insert one record.
 async function saveOne(userId, host, port, text, barcode, identifier) {
   const [[config]] = await db.execute(
@@ -99,8 +99,8 @@ async function saveOne(userId, host, port, text, barcode, identifier) {
   );
 
   const folderPath = barcode
-    ? (config?.folder_path_ok || null)   // barcode → OK folder
-    : (config?.folder_path_nr || null);  // NR / no barcode → NR folder
+    ? (config?.folder_path_ok || null)   // barcode â†’ OK folder
+    : (config?.folder_path_nr || null);  // NR / no barcode â†’ NR folder
   const zoneId     = config?.zone_id || null;
 
   const userLabel    = userLabels.get(`${host}:${port}`) || `user${userId}`;
@@ -111,7 +111,7 @@ async function saveOne(userId, host, port, text, barcode, identifier) {
   else if (folderPath)
     logger.info(`[${userLabel}][${port}] No image match for "${identifier}" in ${folderPath}`);
 
-  console.log(`🗂️  [${userLabel}][${port}] folder=${folderPath} | matched=${matchedImage} | barcode=${barcode} | zone=${zoneId}`);
+  logger.info(`ðŸ—‚ï¸  [${userLabel}][${port}] folder=${folderPath} | matched=${matchedImage} | barcode=${barcode} | zone=${zoneId}`);
 
   const result = await db.execute(
     `INSERT INTO tcp_messages
@@ -123,9 +123,9 @@ async function saveOne(userId, host, port, text, barcode, identifier) {
   // Get the inserted record ID (db.execute returns [{insertId, affectedRows}, undefined])
   const recordId = result[0]?.insertId;
   
-  logger.info(`[${userLabel}][${port}] Saved → recordId=${recordId} image=${matchedImage} barcode=${barcode} zone=${zoneId}`);
+  logger.info(`[${userLabel}][${port}] Saved â†’ recordId=${recordId} image=${matchedImage} barcode=${barcode} zone=${zoneId}`);
   
-  // ── Process for zone cycle tracking (non-blocking) ────────────────────────
+  // â”€â”€ Process for zone cycle tracking (non-blocking) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (zoneId && recordId) {
     zoneCycleProcessor.processRecord({
       recordId,
@@ -140,11 +140,11 @@ async function saveOne(userId, host, port, text, barcode, identifier) {
   }
 }
 
-// ── processMessage ──────────────────────────────────────────────────────────
+// â”€â”€ processMessage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Paired mode rules:
-//   • Both have barcode → save BOTH records (one per port)
-//   • One barcode, one NR → save only the barcode record
-//   • Both NR → save only one record (port1 side)
+//   â€¢ Both have barcode â†’ save BOTH records (one per port)
+//   â€¢ One barcode, one NR â†’ save only the barcode record
+//   â€¢ Both NR â†’ save only one record (port1 side)
 // Unpaired mode: save one record, barcode if present else null.
 async function processMessage(userId, host1, port1, text1, host2, port2, text2) {
   try {
@@ -158,27 +158,27 @@ async function processMessage(userId, host1, port1, text1, host2, port2, text2) 
     const p1 = parsePart(text1);
 
     if (text2 !== undefined) {
-      // ── Paired mode ─────────────────────────────────────────────────────
+      // â”€â”€ Paired mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const p2          = parsePart(text2);
       const isP1Barcode = !!(p1.val && p1.val !== "NR");
       const isP2Barcode = !!(p2.val && p2.val !== "NR");
 
       if (isP1Barcode && isP2Barcode) {
-        // Both ports have a barcode → save BOTH records
+        // Both ports have a barcode â†’ save BOTH records
         await saveOne(userId, host1, port1, text1, p1.val, p1.ident);
         await saveOne(userId, host2, port2, text2, p2.val, p2.ident);
       } else if (isP2Barcode) {
-        // Only port2 has barcode → save port2 only
+        // Only port2 has barcode â†’ save port2 only
         await saveOne(userId, host2, port2, text2, p2.val, p2.ident);
       } else if (isP1Barcode) {
-        // Only port1 has barcode → save port1 only
+        // Only port1 has barcode â†’ save port1 only
         await saveOne(userId, host1, port1, text1, p1.val, p1.ident);
       } else {
-        // Both NR / empty → save one record (port1 side)
+        // Both NR / empty â†’ save one record (port1 side)
         await saveOne(userId, host1, port1, text1, null, p1.ident);
       }
     } else {
-      // ── Unpaired mode ────────────────────────────────────────────────────
+      // â”€â”€ Unpaired mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const barcode = (p1.val && p1.val !== "NR") ? p1.val : null;
       await saveOne(userId, host1, port1, text1, barcode, p1.ident);
     }
@@ -188,7 +188,7 @@ async function processMessage(userId, host1, port1, text1, host2, port2, text2) 
   }
 }
 
-// ── connectOne ───────────────────────────────────────────────────────────────
+// â”€â”€ connectOne â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function connectOne(userId, host, port) {
   if (loggedOut.has(userId)) return;
   const key = connKey(userId, host, port);
@@ -201,7 +201,7 @@ function connectOne(userId, host, port) {
   const userLabel = userLabels.get(`${host}:${port}`) || `user${userId}`;
 
   logger.info(`[${userLabel}] CONNECTING ${host}:${port}`);
-  console.log(`🔄 [${userLabel}] Connecting ${host}:${port}`);
+  logger.info(`ðŸ”„ [${userLabel}] Connecting ${host}:${port}`);
 
   socket.connect(Number(port), host, () => {
     isConnected = true;
@@ -209,7 +209,7 @@ function connectOne(userId, host, port) {
     const cur = connections.get(key);
     if (cur) connections.set(key, { ...cur, connected: true });
     logger.info(`[${userLabel}] CONNECTED ${host}:${port}`);
-    console.log(`✅ [${userLabel}] Connected ${host}:${port}`);
+    logger.info(`âœ… [${userLabel}] Connected ${host}:${port}`);
     notify("info", "TCP Connected", `User ${userLabel} connected to ${host}:${port}`);
     if (INITIAL_MESSAGE) socket.write(INITIAL_MESSAGE + "\r\n");
   });
@@ -219,9 +219,9 @@ function connectOne(userId, host, port) {
     const text = data.toString().trim();
     if (!text) return;
     logger.info(`[${userLabel}][${host}:${port}] ${text}`);
-    console.log(`📩 [${userLabel}][${port}]`, text);
+    logger.info(`ðŸ“© [${userLabel}][${port}]`, text);
 
-    // ── Store arrival IMMEDIATELY (before any await) ─────────────────────
+    // â”€â”€ Store arrival IMMEDIATELY (before any await) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // This is the fix for the async race condition: both ports' messages
     // must be in rawMessages before either DB query resolves, so partner
     // lookup always succeeds within the matching window.
@@ -230,7 +230,7 @@ function connectOne(userId, host, port) {
     rawMessages.set(myKey, { text, ts: arrivalTs, timer: null });
 
     try {
-      // ── Zone-based pair matching ──────────────────────────────────────
+      // â”€â”€ Zone-based pair matching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const [[myRow]] = await db.execute(
         "SELECT zone_id, is_active FROM user_tcp_configs WHERE user_id = ? AND host = ? AND port = ? LIMIT 1",
         [userId, host, Number(port)]
@@ -257,7 +257,7 @@ function connectOne(userId, host, port) {
       );
 
       if (pairRows.length !== 1) {
-        // 0 or 2+ partners — process immediately without pairing
+        // 0 or 2+ partners â€” process immediately without pairing
         rawMessages.delete(myKey);
         await processMessage(userId, host, Number(port), text);
         return;
@@ -274,7 +274,7 @@ function connectOne(userId, host, port) {
       const partnerMsg = rawMessages.get(otherKey);
 
       if (partnerMsg) {
-        // ── Partner message found — check timing ─────────────────────
+        // â”€â”€ Partner message found â€” check timing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const delta = Math.abs(arrivalTs - partnerMsg.ts);
 
         // Cancel partner's timeout (it must not process unpaired now)
@@ -283,24 +283,24 @@ function connectOne(userId, host, port) {
         rawMessages.delete(myKey);
 
         if (delta <= MATCHING_WINDOW) {
-          // ✅ Both arrived within window — PAIR
-          logger.info(`[${userLabel}] PAIRED ${host}:${currentPort} & ${otherHost}:${otherPort} (zone=${zoneId}) Δ${delta}ms`);
+          // âœ… Both arrived within window â€” PAIR
+          logger.info(`[${userLabel}] PAIRED ${host}:${currentPort} & ${otherHost}:${otherPort} (zone=${zoneId}) Î”${delta}ms`);
           await processMessage(userId, host, currentPort, text, otherHost, otherPort, partnerMsg.text);
         } else {
-          // Partner's message is stale (> window) — process both unpaired
-          logger.info(`[${userLabel}] Stale partner (Δ${delta}ms > ${MATCHING_WINDOW}ms) — processing both unpaired`);
+          // Partner's message is stale (> window) â€” process both unpaired
+          logger.info(`[${userLabel}] Stale partner (Î”${delta}ms > ${MATCHING_WINDOW}ms) â€” processing both unpaired`);
           await processMessage(userId, otherHost, otherPort, partnerMsg.text);
           await processMessage(userId, host, currentPort, text);
         }
       } else {
-        // ── No partner yet — set a timeout for remaining window ───────
+        // â”€â”€ No partner yet â€” set a timeout for remaining window â”€â”€â”€â”€â”€â”€â”€
         const elapsed   = Date.now() - arrivalTs;
         const remaining = Math.max(0, MATCHING_WINDOW - elapsed);
 
         const timer = setTimeout(async () => {
           if (rawMessages.has(myKey)) {
             rawMessages.delete(myKey);
-            logger.info(`[${userLabel}][${currentPort}] Matching window expired → processing unpaired`);
+            logger.info(`[${userLabel}][${currentPort}] Matching window expired â†’ processing unpaired`);
             await processMessage(userId, host, currentPort, text);
           }
         }, remaining);
@@ -323,7 +323,7 @@ function connectOne(userId, host, port) {
     // Mark as disconnected in the map immediately
     const cur = connections.get(key);
     if (cur) connections.set(key, { ...cur, connected: false });
-    logger.info(`[${userLabel}][${host}:${port}] closed — retrying in ${RECONNECT_DELAY}ms`);
+    logger.info(`[${userLabel}][${host}:${port}] closed â€” retrying in ${RECONNECT_DELAY}ms`);
     socket.removeAllListeners();
     socket.destroy();
 
@@ -336,7 +336,7 @@ function connectOne(userId, host, port) {
     ).then(([[cfg]]) => {
       if (!cfg || !cfg.is_active || loggedOut.has(userId) || !connections.has(key)) {
         connections.delete(key);
-        console.log(`🔒 [${userLabel}][${port}] is_active=0 or logged out — reconnect suppressed`);
+        logger.info(`ðŸ”’ [${userLabel}][${port}] is_active=0 or logged out â€” reconnect suppressed`);
         return;
       }
       const timer = setTimeout(() => {
@@ -349,7 +349,7 @@ function connectOne(userId, host, port) {
 
   socket.on("error", (err) => {
     logger.error(`[${userLabel}][${host}:${port}] ERROR: ${err.message}`);
-    console.log(`🚨 [${userLabel}][${port}] ERROR:`, err.message);
+    logger.info(`ðŸš¨ [${userLabel}][${port}] ERROR:`, err.message);
   });
 }
 
@@ -401,8 +401,8 @@ function logoutUser(userId) {
     }
   }
   const userLabel = `user${userId}`;
-  logger.info(`[${userLabel}] logged out — all TCP connections stopped`);
-  console.log(`🔒 [${userLabel}] logged out — TCP connections stopped`);
+  logger.info(`[${userLabel}] logged out â€” all TCP connections stopped`);
+  logger.info(`ðŸ”’ [${userLabel}] logged out â€” TCP connections stopped`);
 }
 
 async function loadAndConnectUser(userId) {
@@ -456,7 +456,7 @@ module.exports = {
 };
 
 /**
- * Debug helper — returns raw connections map state for /devices/debug
+ * Debug helper â€” returns raw connections map state for /devices/debug
  */
 function getConnectionsDump() {
   const result = {};
@@ -503,3 +503,4 @@ async function getConnectionStatus() {
     };
   });
 }
+
